@@ -79,9 +79,9 @@ const UPGRADE_THRESHOLDS = [16, 50, 100, 180, 300, 480, 720, 1000, 1400, 1900, 2
 // Scroll config
 const SCROLL_TYPES = ['ScrollFire', 'ScrollIce', 'ScrollThunder'];
 const SCROLL_CONFIG = {
-    ScrollThunder: { minInterval: 4000, maxInterval: 8000, damage: 25, effectFrames: 8, frameWidth: 64 },
-    ScrollFire: { minInterval: 5000, maxInterval: 10000, burnDamage: 3, burnDuration: 3000, tickInterval: 500, effectFrames: 10, frameWidth: 48 },
-    ScrollIce: { minInterval: 6000, maxInterval: 12000, freezeDuration: 2000, effectFrames: 10, frameWidth: 48 }
+    ScrollThunder: { minInterval: 4000, maxInterval: 8000, damage: 25, effectFrames: 8, frameWidth: 64, desc: ['25 instant dmg', 'nearest enemy'] },
+    ScrollFire: { minInterval: 5000, maxInterval: 10000, burnDamage: 3, burnDuration: 3000, tickInterval: 500, effectFrames: 10, frameWidth: 48, desc: ['18 burn dmg/3s', 'nearest enemy'] },
+    ScrollIce: { minInterval: 6000, maxInterval: 12000, freezeDuration: 2000, effectFrames: 10, frameWidth: 48, desc: ['Freeze 2s', 'nearest enemy'] }
 };
 
 // Monster type to folder and sprite file mapping
@@ -688,8 +688,8 @@ function drawBackground() {
 
     for (let y = startY; y < cameraY + canvas.height / 2 + SCALED_TILE; y += SCALED_TILE) {
         for (let x = startX; x < cameraX + canvas.width / 2 + SCALED_TILE; x += SCALED_TILE) {
-            const screenX = x - cameraX + canvas.width / 2;
-            const screenY = y - cameraY + canvas.height / 2;
+            const screenX = Math.round(x - cameraX + canvas.width / 2);
+            const screenY = Math.round(y - cameraY + canvas.height / 2);
 
             // Get tile type for this world position
             const tile = worldToTile(x, y);
@@ -992,7 +992,24 @@ function drawWeaponList() {
         const scrollImage = images[scroll.type];
         if (scrollImage && scrollImage.complete) {
             ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(scrollImage, startX, startY, iconSize, iconSize);
+
+            // Check if scroll should be highlighted (just triggered)
+            if (scroll.highlightUntil && gameTime < scroll.highlightUntil) {
+                // Pulsing glow effect
+                const progress = (scroll.highlightUntil - gameTime) / 400;
+                const pulseIntensity = 0.5 + 0.5 * Math.sin(progress * Math.PI * 4);
+
+                // Draw glow behind the icon
+                ctx.save();
+                ctx.shadowColor = scroll.type === 'ScrollThunder' ? '#ffff00' :
+                                  scroll.type === 'ScrollFire' ? '#ff6600' : '#00ffff';
+                ctx.shadowBlur = 15 * pulseIntensity;
+                ctx.globalAlpha = 0.8 + 0.2 * pulseIntensity;
+                ctx.drawImage(scrollImage, startX, startY, iconSize, iconSize);
+                ctx.restore();
+            } else {
+                ctx.drawImage(scrollImage, startX, startY, iconSize, iconSize);
+            }
         }
 
         startY += iconSize + spacing;
@@ -1489,12 +1506,27 @@ function drawUpgradeMenu() {
             ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
         }
 
-        // Draw weapon icon
+        // Draw weapon icon (scrolls have custom layout)
         const weaponImage = images[option.type];
         if (weaponImage && weaponImage.complete && weaponImage.naturalWidth > 0) {
-            const iconX = buttonX + iconPadding;
-            const iconY = buttonY + (buttonHeight - iconSize) / 2;
-            ctx.drawImage(weaponImage, iconX, iconY, iconSize, iconSize);
+            if (option.isScroll) {
+                // Scroll layout: icon at top-left, name below icon
+                const scrollIconSize = 40;
+                const iconX = buttonX + iconPadding;
+                const iconY = buttonY + 8;
+                ctx.drawImage(weaponImage, iconX, iconY, scrollIconSize, scrollIconSize);
+
+                // Name below icon
+                ctx.textAlign = 'center';
+                ctx.fillStyle = 'white';
+                ctx.font = '8px "Press Start 2P", monospace';
+                const displayName = option.type.replace('Scroll', '');
+                ctx.fillText(displayName, iconX + scrollIconSize / 2, buttonY + 68);
+            } else {
+                const iconX = buttonX + iconPadding;
+                const iconY = buttonY + (buttonHeight - iconSize) / 2;
+                ctx.drawImage(weaponImage, iconX, iconY, iconSize, iconSize);
+            }
         }
 
         // Text area starts after icon
@@ -1506,27 +1538,19 @@ function drawUpgradeMenu() {
         const weaponData = weaponsData.find(w => w.type === option.type);
 
         if (option.isScroll) {
-            // SCROLL badge
-            ctx.fillStyle = '#9a4aca';
-            ctx.font = '8px "Press Start 2P", monospace';
-            ctx.fillText('SCROLL', textCenterX, buttonY + 18);
+            const config = SCROLL_CONFIG[option.type];
 
-            // Scroll name (without "Scroll" prefix)
-            ctx.fillStyle = 'white';
-            ctx.font = '10px "Press Start 2P", monospace';
-            const displayName = option.type.replace('Scroll', '');
-            ctx.fillText(displayName, textCenterX, buttonY + 38);
-
-            // Effect description
-            ctx.font = '8px "Press Start 2P", monospace';
+            // Description (2 lines) to the right of icon
             ctx.fillStyle = '#c8f';
-            let effectDesc = '';
-            switch (option.type) {
-                case 'ScrollThunder': effectDesc = '25 dmg instant'; break;
-                case 'ScrollFire': effectDesc = 'Burn: 18 dmg/3s'; break;
-                case 'ScrollIce': effectDesc = 'Freeze 2s'; break;
-            }
-            ctx.fillText(effectDesc, textCenterX, buttonY + 58);
+            ctx.font = '8px "Press Start 2P", monospace';
+            ctx.fillText(config.desc[0], textCenterX, buttonY + 22);
+            ctx.fillText(config.desc[1], textCenterX, buttonY + 38);
+
+            // Cooldown time
+            ctx.fillStyle = '#aaa';
+            const minSec = Math.round(config.minInterval / 1000);
+            const maxSec = Math.round(config.maxInterval / 1000);
+            ctx.fillText(`${minSec}-${maxSec}s cooldown`, textCenterX, buttonY + 58);
         } else if (option.isNew) {
             // NEW badge
             ctx.fillStyle = '#4aca8a';
@@ -1638,7 +1662,7 @@ function updatePlayer(dt) {
         }
     }
     // Desktop: Use click-to-move
-    else if (player.moving) {
+    else if (!isMobile && player.moving) {
         const dx = player.targetX - player.x;
         const dy = player.targetY - player.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -2324,8 +2348,21 @@ function updateScrolls(dt) {
 function triggerScrollEffect(scroll) {
     if (enemies.length === 0) return;
 
-    // Select random enemy
-    const targetEnemy = enemies[Math.floor(Math.random() * enemies.length)];
+    // Set highlight for UI feedback
+    scroll.highlightUntil = gameTime + 400;
+
+    // Select nearest enemy to player
+    let targetEnemy = enemies[0];
+    let minDist = Infinity;
+    for (const enemy of enemies) {
+        const dx = enemy.x - player.x;
+        const dy = enemy.y - player.y;
+        const dist = dx * dx + dy * dy;
+        if (dist < minDist) {
+            minDist = dist;
+            targetEnemy = enemy;
+        }
+    }
     const config = SCROLL_CONFIG[scroll.type];
 
     switch (scroll.type) {
