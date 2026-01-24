@@ -119,6 +119,7 @@ let spawnPhasesData = [];
 // Game state
 let gameState = 'loading'; // 'loading', 'playing', 'upgrading', 'gameover', 'paused'
 let score = 0;
+let highScore = 0;
 let lastTime = 0;
 let spawnTimer = 0;
 let gameTime = 0; // Track total game time for spawn acceleration
@@ -181,6 +182,15 @@ let joystick = {
     dirY: 0
 };
 
+// Gamepad state
+let gamepad = {
+    connected: false,
+    index: null,
+    deadZone: 0.15,
+    leftStick: { x: 0, y: 0 },
+    buttons: { start: false, prevStart: false }
+};
+
 // Images
 const images = {};
 
@@ -206,6 +216,16 @@ async function loadGameData() {
         patreonCurrent = patreonData.current || 0;
     } catch (error) {
         // Patreon data is optional, default to 0
+    }
+
+    // Load high score from localStorage
+    try {
+        const savedHighScore = localStorage.getItem('survivalHighScore');
+        if (savedHighScore !== null) {
+            highScore = parseInt(savedHighScore, 10) || 0;
+        }
+    } catch (error) {
+        // localStorage not available, high score won't persist
     }
 }
 
@@ -423,6 +443,21 @@ canvas.addEventListener('touchcancel', (e) => {
             joystick.dirX = 0;
             joystick.dirY = 0;
         }
+    }
+});
+
+// Gamepad connection handlers
+window.addEventListener('gamepadconnected', (e) => {
+    gamepad.connected = true;
+    gamepad.index = e.gamepad.index;
+});
+
+window.addEventListener('gamepaddisconnected', (e) => {
+    if (gamepad.index === e.gamepad.index) {
+        gamepad.connected = false;
+        gamepad.index = null;
+        gamepad.leftStick = { x: 0, y: 0 };
+        gamepad.buttons = { start: false, prevStart: false };
     }
 });
 
@@ -1148,6 +1183,10 @@ function drawGameOver() {
     ctx.font = '16px "Press Start 2P", monospace';
     ctx.fillText(`Final Score: ${Math.floor(score)}`, canvas.width / 2, canvas.height / 2 - 70);
 
+    ctx.font = '12px "Press Start 2P", monospace';
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillText(`Best: ${Math.floor(highScore)}`, canvas.width / 2, canvas.height / 2 - 45);
+
     const buttons = getGameOverButtonBounds();
 
     // Restart button
@@ -1297,6 +1336,12 @@ function drawPauseMenu() {
 
     ctx.font = '32px "Press Start 2P", monospace';
     ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2 - 160);
+
+    ctx.font = '12px "Press Start 2P", monospace';
+    ctx.fillStyle = 'white';
+    ctx.fillText(`Score: ${Math.floor(score)}`, canvas.width / 2, canvas.height / 2 - 120);
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillText(`Best: ${Math.floor(highScore)}`, canvas.width / 2, canvas.height / 2 - 100);
 
     const buttons = getPauseMenuButtonBounds();
 
@@ -1522,6 +1567,44 @@ function drawUpgradeMenu() {
     }
 }
 
+// Gamepad functions
+function pollGamepad() {
+    if (!gamepad.connected || gamepad.index === null) return;
+
+    const gamepads = navigator.getGamepads();
+    const gp = gamepads[gamepad.index];
+    if (!gp) return;
+
+    // Apply dead zone and normalize analog stick values
+    function applyDeadZone(value) {
+        if (Math.abs(value) < gamepad.deadZone) return 0;
+        // Remap to 0-1 range after dead zone
+        const sign = value > 0 ? 1 : -1;
+        return sign * (Math.abs(value) - gamepad.deadZone) / (1 - gamepad.deadZone);
+    }
+
+    // Left stick (axes 0 and 1)
+    gamepad.leftStick.x = applyDeadZone(gp.axes[0] || 0);
+    gamepad.leftStick.y = applyDeadZone(gp.axes[1] || 0);
+
+    // Start button state (button 9 on standard gamepad)
+    gamepad.buttons.prevStart = gamepad.buttons.start;
+    gamepad.buttons.start = gp.buttons[9] ? gp.buttons[9].pressed : false;
+}
+
+function handleGamepadButtons() {
+    if (!gamepad.connected) return;
+
+    // Start button: Toggle pause (edge-triggered)
+    if (gamepad.buttons.start && !gamepad.buttons.prevStart) {
+        if (gameState === 'playing') {
+            gameState = 'paused';
+        } else if (gameState === 'paused') {
+            gameState = 'playing';
+        }
+    }
+}
+
 // Update functions
 function updatePlayer(dt) {
     let moveX = 0;
@@ -1531,8 +1614,20 @@ function updatePlayer(dt) {
     // Calculate desired movement (with speed boost if active)
     const speedMultiplier = speedBoostTimer > 0 ? SPEED_BOOST_MULTIPLIER : 1;
 
+    // Gamepad: Use left analog stick (highest priority)
+    if (gamepad.connected && (gamepad.leftStick.x !== 0 || gamepad.leftStick.y !== 0)) {
+        moveX = gamepad.leftStick.x * PLAYER_SPEED * speedMultiplier * dt;
+        moveY = gamepad.leftStick.y * PLAYER_SPEED * speedMultiplier * dt;
+        isMoving = true;
+
+        // Update facing direction based on gamepad
+        if (gamepad.leftStick.x !== 0) {
+            player.facingRight = gamepad.leftStick.x > 0;
+        }
+        player.moving = false; // Cancel click-to-move
+    }
     // Mobile: Use joystick input
-    if (isMobile && (joystick.dirX !== 0 || joystick.dirY !== 0)) {
+    else if (isMobile && (joystick.dirX !== 0 || joystick.dirY !== 0)) {
         moveX = joystick.dirX * PLAYER_SPEED * speedMultiplier * dt;
         moveY = joystick.dirY * PLAYER_SPEED * speedMultiplier * dt;
         isMoving = true;
@@ -1543,7 +1638,7 @@ function updatePlayer(dt) {
         }
     }
     // Desktop: Use click-to-move
-    else if (!isMobile && player.moving) {
+    else if (player.moving) {
         const dx = player.targetX - player.x;
         const dy = player.targetY - player.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -1615,6 +1710,15 @@ function updateEnemies(dt) {
         // Only trigger game over if not invincible
         if (dist < SCALED_TILE * 0.4 && invincibilityTimer <= 0) {
             gameState = 'gameover';
+            // Save high score if current score is higher
+            if (score > highScore) {
+                highScore = score;
+                try {
+                    localStorage.setItem('survivalHighScore', Math.floor(highScore).toString());
+                } catch (error) {
+                    // localStorage not available
+                }
+            }
             return;
         }
 
@@ -2415,6 +2519,10 @@ function restartGame() {
 function gameLoop(timestamp) {
     const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
     lastTime = timestamp;
+
+    // Poll gamepad every frame (required by Gamepad API)
+    pollGamepad();
+    handleGamepadButtons();
 
     // Clear canvas
     ctx.fillStyle = '#1a1a2e';
