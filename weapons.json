@@ -1,0 +1,67 @@
+[
+  {
+    "type": "Arrow",
+    "description": "shoots in direction the user last clicked/touched",
+    "levels": [
+      { "cooldown": 2, "damage": 15 },
+      { "cooldown": 1.8, "damage": 15 },
+      { "cooldown": 1.5, "damage": 18 },
+      { "cooldown": 1.2, "damage": 18 },
+      { "cooldown": 1, "damage": 20 },
+      { "cooldown": 0.8, "damage": 22 },
+      { "cooldown": 0.5, "damage": 25 }
+    ]
+  },
+  {
+    "type": "Shuriken",
+    "description": "shoots all projectiles at once in an equal radius around player",
+    "levels": [
+      { "cooldown": 3.5, "damage": 4, "projectiles": 1 },
+      { "cooldown": 3.5, "damage": 4, "projectiles": 2 },
+      { "cooldown": 3.2, "damage": 6, "projectiles": 3 },
+      { "cooldown": 3, "damage": 6, "projectiles": 4 },
+      { "cooldown": 2.8, "damage": 7, "projectiles": 5 },
+      { "cooldown": 2.5, "damage": 8, "projectiles": 5 },
+      { "cooldown": 2.2, "damage": 10, "projectiles": 5 }
+    ]
+  },
+  {
+    "type": "Kunai",
+    "description": "shoots at the closest enemy to the player",
+    "levels": [
+      { "cooldown": 2.2, "damage": 4 },
+      { "cooldown": 2, "damage": 5 },
+      { "cooldown": 1.8, "damage": 5 },
+      { "cooldown": 1.6, "damage": 6 },
+      { "cooldown": 1.4, "damage": 6 },
+      { "cooldown": 1.2, "damage": 7 },
+      { "cooldown": 1, "damage": 8 }
+    ]
+  },
+  {
+    "type": "Bomb",
+    "description": "throws a bomb in random direction that explodes after a short delay",
+    "levels": [
+      { "cooldown": 4, "damage": 20 },
+      { "cooldown": 3.5, "damage": 25 },
+      { "cooldown": 3, "damage": 30 },
+      { "cooldown": 2.8, "damage": 35 },
+      { "cooldown": 2.5, "damage": 40 },
+      { "cooldown": 2.2, "damage": 50 },
+      { "cooldown": 2, "damage": 60 }
+    ]
+  },
+  {
+    "type": "Circlet",
+    "description": "flies in a close circle around the player, damaging enemies on contact",
+    "levels": [
+      { "damage": 3, "projectiles": 1 },
+      { "damage": 3, "projectiles": 2 },
+      { "damage": 5, "projectiles": 3 },
+      { "damage": 5, "projectiles": 4 },
+      { "damage": 6, "projectiles": 5 },
+      { "damage": 7, "projectiles": 5 },
+      { "damage": 8, "projectiles": 5 }
+    ]
+  }
+]

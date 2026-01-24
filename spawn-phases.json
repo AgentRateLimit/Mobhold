@@ -1,0 +1,94 @@
+[
+    {
+        "startTime": 0,
+        "spawnInterval": 2500,
+        "enemies": {
+            "SpiderYellow": 60,
+            "YellowBat": 40
+        }
+    },
+    {
+        "startTime": 25,
+        "spawnInterval": 2300,
+        "enemies": {
+            "SpiderYellow": 50,
+            "YellowBat": 35,
+            "Eye": 15
+        }
+    },
+    {
+        "startTime": 50,
+        "spawnInterval": 2100,
+        "enemies": {
+            "SpiderYellow": 40,
+            "YellowBat": 30,
+            "Eye": 20,
+            "Beast": 10
+        }
+    },
+    {
+        "startTime": 80,
+        "spawnInterval": 1900,
+        "enemies": {
+            "SpiderYellow": 30,
+            "YellowBat": 25,
+            "Eye": 20,
+            "Beast": 15,
+            "Eye2": 10
+        }
+    },
+    {
+        "startTime": 120,
+        "spawnInterval": 1700,
+        "enemies": {
+            "SpiderYellow": 25,
+            "YellowBat": 20,
+            "Eye": 20,
+            "Beast": 15,
+            "Eye2": 10,
+            "Beast2": 10
+        }
+    },
+    {
+        "startTime": 160,
+        "spawnInterval": 1500,
+        "enemies": {
+            "SpiderYellow": 20,
+            "YellowBat": 15,
+            "Eye": 15,
+            "Beast": 15,
+            "Eye2": 15,
+            "Beast2": 10,
+            "Reptile": 10
+        }
+    },
+    {
+        "startTime": 200,
+        "spawnInterval": 1200,
+        "enemies": {
+            "SpiderYellow": 15,
+            "YellowBat": 10,
+            "Eye": 15,
+            "Beast": 15,
+            "Eye2": 15,
+            "Beast2": 15,
+            "Reptile": 10,
+            "Cyclopse": 5
+        }
+    },
+    {
+        "startTime": 240,
+        "spawnInterval": 1000,
+        "enemies": {
+            "SpiderYellow": 10,
+            "YellowBat": 10,
+            "Eye": 12,
+            "Beast": 13,
+            "Eye2": 15,
+            "Beast2": 15,
+            "Reptile": 10,
+            "Cyclopse": 8,
+            "Cyclopse2": 7
+        }
+    }
+]
