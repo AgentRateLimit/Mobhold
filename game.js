@@ -70,6 +70,9 @@ const Circlet_ORBIT_RADIUS = 160;
 const Circlet_ORBIT_SPEED = 2; // radians per second
 const Circlet_HIT_COOLDOWN = 500; // ms between hits on same enemy
 
+// Shuriken constants
+const SHURIKEN_SPIN_SPEED = 12; // radians per second
+
 // Upgrade thresholds (earlier upgrades, then scales up)
 const UPGRADE_THRESHOLDS = [16, 50, 100, 180, 300, 480, 720, 1000, 1400, 1900, 2500, 3300, 4300, 5500, 7000, 9000, 12000, 15000];
 
@@ -114,7 +117,7 @@ let monstersData = [];
 let spawnPhasesData = [];
 
 // Game state
-let gameState = 'loading'; // 'loading', 'playing', 'upgrading', 'gameover'
+let gameState = 'loading'; // 'loading', 'playing', 'upgrading', 'gameover', 'paused'
 let score = 0;
 let lastTime = 0;
 let spawnTimer = 0;
@@ -266,6 +269,56 @@ function loadImages(callback) {
 // Input handling
 canvas.addEventListener('click', handleInput);
 
+// Helper to check if point is inside a button
+function isPointInButton(x, y, btn) {
+    return x >= btn.x && x <= btn.x + btn.width && y >= btn.y && y <= btn.y + btn.height;
+}
+
+// Cursor hover effect
+canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    let isOverButton = false;
+
+    if (gameState === 'playing') {
+        const pauseBtn = getPauseButtonBounds();
+        if (isPointInButton(x, y, pauseBtn)) isOverButton = true;
+    } else if (gameState === 'paused') {
+        const buttons = getPauseMenuButtonBounds();
+        if (isPointInButton(x, y, buttons.resume) ||
+            isPointInButton(x, y, buttons.fund) ||
+            isPointInButton(x, y, buttons.github) ||
+            isPointInButton(x, y, buttons.moreGames)) {
+            isOverButton = true;
+        }
+    } else if (gameState === 'gameover') {
+        const buttons = getGameOverButtonBounds();
+        if (isPointInButton(x, y, buttons.restart) ||
+            isPointInButton(x, y, buttons.fund) ||
+            isPointInButton(x, y, buttons.github)) {
+            isOverButton = true;
+        }
+    } else if (gameState === 'upgrading') {
+        const buttonWidth = 280;
+        const buttonHeight = 80;
+        const buttonSpacing = 15;
+        const totalHeight = upgradeOptions.length * (buttonHeight + buttonSpacing) - buttonSpacing;
+        const startY = (canvas.height - totalHeight) / 2 + 20;
+        for (let i = 0; i < upgradeOptions.length; i++) {
+            const buttonX = (canvas.width - buttonWidth) / 2;
+            const buttonY = startY + i * (buttonHeight + buttonSpacing);
+            if (x >= buttonX && x <= buttonX + buttonWidth &&
+                y >= buttonY && y <= buttonY + buttonHeight) {
+                isOverButton = true;
+                break;
+            }
+        }
+    }
+
+    canvas.style.cursor = isOverButton ? 'pointer' : 'default';
+});
+
 // Desktop input
 function handleInput(e) {
     if (isMobile) return; // Ignore clicks on mobile
@@ -282,14 +335,22 @@ canvas.addEventListener('touchstart', (e) => {
         const touchX = touch.clientX - rect.left;
         const touchY = touch.clientY - rect.top;
 
-        // Check if this is a UI interaction (game over, upgrade menu)
-        if (gameState === 'gameover' || gameState === 'upgrading') {
+        // Check if this is a UI interaction (game over, upgrade menu, paused)
+        if (gameState === 'gameover' || gameState === 'upgrading' || gameState === 'paused') {
             handleInputAt(touchX, touchY);
             return;
         }
 
         // Start joystick on right side of screen during gameplay
         if (gameState === 'playing') {
+            // Check pause button first
+            const pauseBtn = getPauseButtonBounds();
+            if (touchX >= pauseBtn.x && touchX <= pauseBtn.x + pauseBtn.width &&
+                touchY >= pauseBtn.y && touchY <= pauseBtn.y + pauseBtn.height) {
+                gameState = 'paused';
+                return;
+            }
+
             joystick.active = true;
             joystick.touchId = touch.identifier;
             joystick.baseX = touchX;
@@ -393,12 +454,54 @@ function handleInputAt(screenX, screenY) {
         return;
     }
 
+    if (gameState === 'paused') {
+        const buttons = getPauseMenuButtonBounds();
+
+        // Check resume button
+        if (screenX >= buttons.resume.x && screenX <= buttons.resume.x + buttons.resume.width &&
+            screenY >= buttons.resume.y && screenY <= buttons.resume.y + buttons.resume.height) {
+            gameState = 'playing';
+            return;
+        }
+
+        // Check fund button
+        if (screenX >= buttons.fund.x && screenX <= buttons.fund.x + buttons.fund.width &&
+            screenY >= buttons.fund.y && screenY <= buttons.fund.y + buttons.fund.height) {
+            window.open('https://www.patreon.com/15462430/join', '_blank');
+            return;
+        }
+
+        // Check github button
+        if (screenX >= buttons.github.x && screenX <= buttons.github.x + buttons.github.width &&
+            screenY >= buttons.github.y && screenY <= buttons.github.y + buttons.github.height) {
+            window.open('https://github.com/AgentRateLimit/Mobhold', '_blank');
+            return;
+        }
+
+        // Check more games button
+        if (screenX >= buttons.moreGames.x && screenX <= buttons.moreGames.x + buttons.moreGames.width &&
+            screenY >= buttons.moreGames.y && screenY <= buttons.moreGames.y + buttons.moreGames.height) {
+            window.open('https://agentratelimit.github.io/website/', '_blank');
+            return;
+        }
+
+        return;
+    }
+
     if (gameState === 'upgrading') {
         handleUpgradeClick(screenX, screenY);
         return;
     }
 
     if (gameState !== 'playing') return;
+
+    // Check pause button click
+    const pauseBtn = getPauseButtonBounds();
+    if (screenX >= pauseBtn.x && screenX <= pauseBtn.x + pauseBtn.width &&
+        screenY >= pauseBtn.y && screenY <= pauseBtn.y + pauseBtn.height) {
+        gameState = 'paused';
+        return;
+    }
 
     // Convert screen position to world position
     const worldX = screenX + cameraX - canvas.width / 2;
@@ -693,8 +796,16 @@ function drawProjectiles() {
         ctx.save();
         ctx.translate(screenX + SCALED_TILE / 2, screenY + SCALED_TILE / 2);
         // Arrow and Kunai sprites point bottom-left to top-right (-45°), add π/4 to correct
-        const rotationOffset = (proj.weaponType === 'Arrow' || proj.weaponType === 'Kunai') ? Math.PI / 4 : 0;
-        ctx.rotate(proj.angle + rotationOffset);
+        // Shuriken uses spinAngle for continuous rotation during flight
+        let rotation;
+        if (proj.weaponType === 'Shuriken') {
+            rotation = proj.spinAngle;
+        } else if (proj.weaponType === 'Arrow' || proj.weaponType === 'Kunai') {
+            rotation = proj.angle + Math.PI / 4;
+        } else {
+            rotation = proj.angle;
+        }
+        ctx.rotate(rotation);
         ctx.drawImage(
             projImage,
             -SCALED_TILE / 2, -SCALED_TILE / 2, SCALED_TILE, SCALED_TILE
@@ -906,10 +1017,46 @@ function drawJoystick() {
     }
 }
 
+function drawPauseButton() {
+    if (gameState !== 'playing') return;
+
+    const size = 40;
+    const margin = 10;
+    const x = canvas.width - size - margin;
+    const y = margin;
+
+    // Draw button background
+    ctx.fillStyle = 'rgba(50, 50, 50, 0.7)';
+    ctx.fillRect(x, y, size, size);
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, size, size);
+
+    // Draw pause icon (two vertical bars)
+    ctx.fillStyle = 'white';
+    const barWidth = 6;
+    const barHeight = 20;
+    const barY = y + (size - barHeight) / 2;
+    ctx.fillRect(x + size/2 - barWidth - 3, barY, barWidth, barHeight);
+    ctx.fillRect(x + size/2 + 3, barY, barWidth, barHeight);
+}
+
+function getPauseButtonBounds() {
+    const size = 40;
+    const margin = 10;
+    return {
+        x: canvas.width - size - margin,
+        y: margin,
+        width: size,
+        height: size
+    };
+}
+
 function drawUI() {
     drawPointsStatusBar();
     drawWeaponList();
     drawJoystick();
+    drawPauseButton();
 }
 
 function getGameOverButtonBounds() {
@@ -1095,6 +1242,126 @@ function drawPatreonProgress(startY) {
     ctx.fillStyle = '#aaa';
     ctx.font = '8px "Press Start 2P", monospace';
     ctx.fillText('Goal: New game every week!', canvas.width / 2, barY + barHeight + 14);
+}
+
+function getPauseMenuButtonBounds() {
+    const resumeWidth = 200;
+    const resumeHeight = 50;
+    const fundWidth = 280;
+    const fundHeight = 45;
+    const githubSize = 45;
+    const moreGamesWidth = 280;
+    const moreGamesHeight = 45;
+    const buttonSpacing = 15;
+
+    const resumeY = canvas.height / 2 - 80;
+    const fundY = canvas.height / 2 + 30;
+    const fundX = (canvas.width - fundWidth - buttonSpacing - githubSize) / 2;
+    const moreGamesY = fundY + fundHeight + 80; // After patreon progress bar (bar height 26 + text 14 + spacing)
+
+    return {
+        resume: {
+            x: (canvas.width - resumeWidth) / 2,
+            y: resumeY,
+            width: resumeWidth,
+            height: resumeHeight
+        },
+        fund: {
+            x: fundX,
+            y: fundY,
+            width: fundWidth,
+            height: fundHeight
+        },
+        github: {
+            x: fundX + fundWidth + buttonSpacing,
+            y: fundY,
+            width: githubSize,
+            height: fundHeight
+        },
+        moreGames: {
+            x: (canvas.width - moreGamesWidth) / 2,
+            y: moreGamesY,
+            width: moreGamesWidth,
+            height: moreGamesHeight
+        }
+    };
+}
+
+function drawPauseMenu() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = 'white';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.font = '32px "Press Start 2P", monospace';
+    ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2 - 160);
+
+    const buttons = getPauseMenuButtonBounds();
+
+    // Resume button
+    ctx.fillStyle = '#4a7a4a';
+    ctx.fillRect(buttons.resume.x, buttons.resume.y, buttons.resume.width, buttons.resume.height);
+    ctx.strokeStyle = '#6aca6a';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(buttons.resume.x, buttons.resume.y, buttons.resume.width, buttons.resume.height);
+
+    ctx.fillStyle = 'white';
+    ctx.font = '14px "Press Start 2P", monospace';
+    ctx.fillText('RESUME', canvas.width / 2, buttons.resume.y + buttons.resume.height / 2);
+
+    // Credits
+    ctx.fillStyle = '#aaa';
+    ctx.font = '10px "Press Start 2P", monospace';
+    ctx.fillText('Created by AgentRateLimit', canvas.width / 2, buttons.resume.y + buttons.resume.height + 25);
+
+    // Patreon message
+    ctx.fillStyle = '#ccc';
+    ctx.font = '10px "Press Start 2P", monospace';
+    ctx.fillText('Digital wealth for everyone by open source.', canvas.width / 2, buttons.resume.y + buttons.resume.height + 45);
+
+    // Fund the mission button
+    ctx.fillStyle = '#8a2a4a';
+    ctx.fillRect(buttons.fund.x, buttons.fund.y, buttons.fund.width, buttons.fund.height);
+    ctx.strokeStyle = '#f96854';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(buttons.fund.x, buttons.fund.y, buttons.fund.width, buttons.fund.height);
+
+    // Heart icon
+    ctx.fillStyle = '#ff6b6b';
+    drawHeart(buttons.fund.x + 25, buttons.fund.y + buttons.fund.height / 2 - 8, 12);
+
+    ctx.fillStyle = 'white';
+    ctx.font = '12px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Fund the Mission', buttons.fund.x + buttons.fund.width / 2 + 10, buttons.fund.y + buttons.fund.height / 2);
+
+    // GitHub button
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(buttons.github.x, buttons.github.y, buttons.github.width, buttons.github.height);
+    ctx.strokeStyle = '#6a6a6a';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(buttons.github.x, buttons.github.y, buttons.github.width, buttons.github.height);
+
+    // GitHub icon
+    ctx.fillStyle = 'white';
+    drawGitHubIcon(buttons.github.x + buttons.github.width / 2, buttons.github.y + buttons.github.height / 2, 18);
+
+    // Patreon progress bar
+    drawPatreonProgress(buttons.fund.y + buttons.fund.height + 20);
+
+    // More games button
+    ctx.fillStyle = '#2a4a6a';
+    ctx.fillRect(buttons.moreGames.x, buttons.moreGames.y, buttons.moreGames.width, buttons.moreGames.height);
+    ctx.strokeStyle = '#4a8aca';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(buttons.moreGames.x, buttons.moreGames.y, buttons.moreGames.width, buttons.moreGames.height);
+
+    ctx.fillStyle = 'white';
+    ctx.font = '12px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('More Games', buttons.moreGames.x + buttons.moreGames.width / 2, buttons.moreGames.y + buttons.moreGames.height / 2);
 }
 
 function formatStatChanges(weaponData, currentLevel, nextLevel) {
@@ -1459,6 +1726,11 @@ function updateProjectiles(dt) {
             proj.x += Math.cos(proj.angle) * PROJECTILE_SPEED * dt;
             proj.y += Math.sin(proj.angle) * PROJECTILE_SPEED * dt;
 
+            // Update shuriken spin
+            if (proj.weaponType === 'Shuriken') {
+                proj.spinAngle += SHURIKEN_SPIN_SPEED * dt;
+            }
+
             // Remove if off screen
             const screenX = proj.x - cameraX;
             const screenY = proj.y - cameraY;
@@ -1756,6 +2028,7 @@ function fireShuriken(levelData) {
             x: player.x,
             y: player.y,
             angle: angle,
+            spinAngle: 0,
             damage: levelData.damage,
             weaponType: 'Shuriken'
         });
@@ -2194,6 +2467,8 @@ function gameLoop(timestamp) {
         drawGameOver();
     } else if (gameState === 'upgrading') {
         drawUpgradeMenu();
+    } else if (gameState === 'paused') {
+        drawPauseMenu();
     }
 
     requestAnimationFrame(gameLoop);
