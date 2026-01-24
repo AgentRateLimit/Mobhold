@@ -1,10 +1,25 @@
 // Game constants
 const TILE_SIZE = 16;
-const SCALE = 3;
-const SCALED_TILE = TILE_SIZE * SCALE;
+const BASE_SCALE = 3;
+let scale = BASE_SCALE;
+let SCALED_TILE = TILE_SIZE * scale;
 const PLAYER_SPEED = 150;
 const SPEED_BOOST_MULTIPLIER = 1.25;
 const SPEED_BOOST_DURATION = 1.5; // seconds
+const POST_UPGRADE_INVINCIBILITY = 1.5; // seconds of invincibility after upgrade
+
+function calculateScale() {
+    const minDimension = Math.min(window.innerWidth, window.innerHeight);
+    // Reduce scale on small screens (< 600px)
+    if (minDimension < 600) {
+        scale = 2;
+    } else if (minDimension < 800) {
+        scale = 2.5;
+    } else {
+        scale = BASE_SCALE;
+    }
+    SCALED_TILE = TILE_SIZE * scale;
+}
 
 // Tile types for the map
 // overlay: true means draw on top of standard grass tile
@@ -83,6 +98,7 @@ function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx.imageSmoothingEnabled = false;
+    calculateScale();
 }
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
@@ -103,6 +119,7 @@ let nextUpgradeIndex = 0;
 let swarmTimer = 0; // Track time until next swarm event
 let firstSwarmDone = false; // Track if first swarm has occurred
 let speedBoostTimer = 0; // Time remaining on speed boost after upgrade
+let invincibilityTimer = 0; // Time remaining where enemies can't kill player
 
 // Player weapons
 let playerWeapons = []; // Array of { type: string, level: number, cooldownTimer: number }
@@ -139,6 +156,22 @@ let upgradeOptions = [];
 // Scroll state
 let playerScrolls = [];   // { type, nextTriggerTime }
 let scrollEffects = [];   // Active visual effects
+
+// Mobile joystick state
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
+const JOYSTICK_BASE_RADIUS = 60;
+const JOYSTICK_KNOB_RADIUS = 30;
+const JOYSTICK_DEAD_ZONE = 10;
+let joystick = {
+    active: false,
+    baseX: 0,
+    baseY: 0,
+    knobX: 0,
+    knobY: 0,
+    touchId: null,
+    dirX: 0,
+    dirY: 0
+};
 
 // Images
 const images = {};
@@ -217,17 +250,105 @@ function loadImages(callback) {
 
 // Input handling
 canvas.addEventListener('click', handleInput);
-canvas.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    const touch = e.touches[0];
-    const rect = canvas.getBoundingClientRect();
-    handleInputAt(touch.clientX - rect.left, touch.clientY - rect.top);
-});
 
+// Desktop input
 function handleInput(e) {
+    if (isMobile) return; // Ignore clicks on mobile
     const rect = canvas.getBoundingClientRect();
     handleInputAt(e.clientX - rect.left, e.clientY - rect.top);
 }
+
+// Mobile joystick touch handling
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+
+    for (const touch of e.changedTouches) {
+        const touchX = touch.clientX - rect.left;
+        const touchY = touch.clientY - rect.top;
+
+        // Check if this is a UI interaction (game over, upgrade menu)
+        if (gameState === 'gameover' || gameState === 'upgrading') {
+            handleInputAt(touchX, touchY);
+            return;
+        }
+
+        // Start joystick on right side of screen during gameplay
+        if (gameState === 'playing') {
+            joystick.active = true;
+            joystick.touchId = touch.identifier;
+            joystick.baseX = touchX;
+            joystick.baseY = touchY;
+            joystick.knobX = touchX;
+            joystick.knobY = touchY;
+            joystick.dirX = 0;
+            joystick.dirY = 0;
+        }
+    }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (!joystick.active) return;
+
+    const rect = canvas.getBoundingClientRect();
+
+    for (const touch of e.changedTouches) {
+        if (touch.identifier === joystick.touchId) {
+            const touchX = touch.clientX - rect.left;
+            const touchY = touch.clientY - rect.top;
+
+            // Calculate distance from joystick base
+            const dx = touchX - joystick.baseX;
+            const dy = touchY - joystick.baseY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            // Clamp knob position to joystick radius
+            if (dist > JOYSTICK_BASE_RADIUS) {
+                joystick.knobX = joystick.baseX + (dx / dist) * JOYSTICK_BASE_RADIUS;
+                joystick.knobY = joystick.baseY + (dy / dist) * JOYSTICK_BASE_RADIUS;
+            } else {
+                joystick.knobX = touchX;
+                joystick.knobY = touchY;
+            }
+
+            // Calculate normalized direction (with dead zone)
+            if (dist > JOYSTICK_DEAD_ZONE) {
+                const normalizedDist = Math.min(dist, JOYSTICK_BASE_RADIUS) / JOYSTICK_BASE_RADIUS;
+                joystick.dirX = (dx / dist) * normalizedDist;
+                joystick.dirY = (dy / dist) * normalizedDist;
+
+                // Update player facing angle for Arrow weapon
+                playerFacingAngle = Math.atan2(dy, dx);
+            } else {
+                joystick.dirX = 0;
+                joystick.dirY = 0;
+            }
+        }
+    }
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+    for (const touch of e.changedTouches) {
+        if (touch.identifier === joystick.touchId) {
+            joystick.active = false;
+            joystick.touchId = null;
+            joystick.dirX = 0;
+            joystick.dirY = 0;
+        }
+    }
+});
+
+canvas.addEventListener('touchcancel', (e) => {
+    for (const touch of e.changedTouches) {
+        if (touch.identifier === joystick.touchId) {
+            joystick.active = false;
+            joystick.touchId = null;
+            joystick.dirX = 0;
+            joystick.dirY = 0;
+        }
+    }
+});
 
 function handleInputAt(screenX, screenY) {
     if (gameState === 'gameover') {
@@ -327,6 +448,9 @@ function applyUpgrade(option) {
 
     // Grant speed boost to escape dangerous situations
     speedBoostTimer = SPEED_BOOST_DURATION;
+
+    // Grant invincibility to survive being surrounded
+    invincibilityTimer = POST_UPGRADE_INVINCIBILITY;
 }
 
 // Tile helper functions
@@ -449,6 +573,12 @@ function drawPlayer() {
     const frameY = player.moving ? player.frame : 0;
 
     ctx.save();
+
+    // Flash player when invincible
+    if (invincibilityTimer > 0 && Math.floor(invincibilityTimer * 8) % 2 === 0) {
+        ctx.globalAlpha = 0.5;
+    }
+
     if (!player.facingRight) {
         ctx.translate(screenX + SCALED_TILE, screenY);
         ctx.scale(-1, 1);
@@ -620,7 +750,8 @@ function drawBlood() {
 }
 
 function drawPointsStatusBar() {
-    const barWidth = 400;
+    const maxBarWidth = 400;
+    const barWidth = Math.min(maxBarWidth, canvas.width - 40); // 20px padding on each side
     const barHeight = 30;
     const barX = (canvas.width - barWidth) / 2;
     const barY = 10;
@@ -696,9 +827,63 @@ function drawWeaponList() {
     }
 }
 
+function drawJoystick() {
+    if (!isMobile || gameState !== 'playing') return;
+
+    // Draw joystick base (semi-transparent circle)
+    if (joystick.active) {
+        // Active joystick - draw at touch position
+        ctx.globalAlpha = 0.4;
+        ctx.fillStyle = '#333';
+        ctx.beginPath();
+        ctx.arc(joystick.baseX, joystick.baseY, JOYSTICK_BASE_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#666';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Draw joystick knob
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = '#888';
+        ctx.beginPath();
+        ctx.arc(joystick.knobX, joystick.knobY, JOYSTICK_KNOB_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#aaa';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.globalAlpha = 1.0;
+    } else {
+        // Inactive - show hint indicator in bottom right
+        const hintX = canvas.width - 80;
+        const hintY = canvas.height - 100;
+
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = '#333';
+        ctx.beginPath();
+        ctx.arc(hintX, hintY, JOYSTICK_BASE_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Small knob in center
+        ctx.fillStyle = '#555';
+        ctx.beginPath();
+        ctx.arc(hintX, hintY, JOYSTICK_KNOB_RADIUS * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.globalAlpha = 1.0;
+    }
+}
+
 function drawUI() {
     drawPointsStatusBar();
     drawWeaponList();
+    drawJoystick();
 }
 
 function getGameOverButtonBounds() {
@@ -1001,46 +1186,75 @@ function drawUpgradeMenu() {
 
 // Update functions
 function updatePlayer(dt) {
-    if (!player.moving) return;
-
-    const dx = player.targetX - player.x;
-    const dy = player.targetY - player.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist < 5) {
-        player.moving = false;
-        return;
-    }
-
-    // Update facing direction
-    if (dx !== 0) {
-        player.facingRight = dx > 0;
-    }
+    let moveX = 0;
+    let moveY = 0;
+    let isMoving = false;
 
     // Calculate desired movement (with speed boost if active)
     const speedMultiplier = speedBoostTimer > 0 ? SPEED_BOOST_MULTIPLIER : 1;
-    const moveX = (dx / dist) * PLAYER_SPEED * speedMultiplier * dt;
-    const moveY = (dy / dist) * PLAYER_SPEED * speedMultiplier * dt;
 
-    // Try full movement first
-    const newX = player.x + moveX;
-    const newY = player.y + moveY;
+    // Mobile: Use joystick input
+    if (isMobile && (joystick.dirX !== 0 || joystick.dirY !== 0)) {
+        moveX = joystick.dirX * PLAYER_SPEED * speedMultiplier * dt;
+        moveY = joystick.dirY * PLAYER_SPEED * speedMultiplier * dt;
+        isMoving = true;
 
-    if (!isPositionBlocked(newX, newY)) {
-        // No collision, move normally
-        player.x = newX;
-        player.y = newY;
-    } else {
-        // Try wall-sliding: X-only movement
-        if (!isPositionBlocked(newX, player.y)) {
-            player.x = newX;
+        // Update facing direction based on joystick
+        if (joystick.dirX !== 0) {
+            player.facingRight = joystick.dirX > 0;
         }
-        // Try wall-sliding: Y-only movement
-        else if (!isPositionBlocked(player.x, newY)) {
-            player.y = newY;
-        }
-        // Completely blocked - don't move
     }
+    // Desktop: Use click-to-move
+    else if (!isMobile && player.moving) {
+        const dx = player.targetX - player.x;
+        const dy = player.targetY - player.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < 5) {
+            player.moving = false;
+        } else {
+            moveX = (dx / dist) * PLAYER_SPEED * speedMultiplier * dt;
+            moveY = (dy / dist) * PLAYER_SPEED * speedMultiplier * dt;
+            isMoving = true;
+
+            // Update facing direction
+            if (dx !== 0) {
+                player.facingRight = dx > 0;
+            }
+        }
+    }
+
+    // Apply movement if any
+    if (isMoving) {
+        const newX = player.x + moveX;
+        const newY = player.y + moveY;
+
+        if (!isPositionBlocked(newX, newY)) {
+            // No collision, move normally
+            player.x = newX;
+            player.y = newY;
+        } else {
+            // Try wall-sliding: X-only movement
+            if (!isPositionBlocked(newX, player.y)) {
+                player.x = newX;
+            }
+            // Try wall-sliding: Y-only movement
+            else if (!isPositionBlocked(player.x, newY)) {
+                player.y = newY;
+            }
+            // Completely blocked - don't move
+        }
+
+        // Animation
+        player.frameTime += dt;
+        if (player.frameTime > 0.15) {
+            player.frameTime = 0;
+            player.frame = (player.frame + 1) % 4;
+        }
+    }
+
+    // Update player.moving flag for animation rendering (needed for joystick)
+    player.moving = isMoving;
 
     // Update camera to follow player with dead zone
     const playerScreenX = player.x - cameraX;
@@ -1052,13 +1266,6 @@ function updatePlayer(dt) {
     if (Math.abs(playerScreenY) > CENTER_DEAD_ZONE) {
         cameraY = player.y - Math.sign(playerScreenY) * CENTER_DEAD_ZONE;
     }
-
-    // Animation
-    player.frameTime += dt;
-    if (player.frameTime > 0.15) {
-        player.frameTime = 0;
-        player.frame = (player.frame + 1) % 4;
-    }
 }
 
 function updateEnemies(dt) {
@@ -1067,7 +1274,8 @@ function updateEnemies(dt) {
         const dy = player.y - enemy.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
-        if (dist < SCALED_TILE * 0.4) {
+        // Only trigger game over if not invincible
+        if (dist < SCALED_TILE * 0.4 && invincibilityTimer <= 0) {
             gameState = 'gameover';
             return;
         }
@@ -1849,6 +2057,7 @@ function restartGame() {
     scrollEffects = [];
     spawnTimer = 0;
     speedBoostTimer = 0;
+    invincibilityTimer = 0;
 
     // Reset to starting weapon
     playerWeapons = [{
@@ -1886,6 +2095,9 @@ function gameLoop(timestamp) {
         updatePlayer(dt);
         if (speedBoostTimer > 0) {
             speedBoostTimer -= dt;
+        }
+        if (invincibilityTimer > 0) {
+            invincibilityTimer -= dt;
         }
         updateEnemies(dt);
         updateProjectiles(dt);
