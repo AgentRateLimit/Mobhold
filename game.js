@@ -51,7 +51,7 @@ const Circlet_ORBIT_SPEED = 2; // radians per second
 const Circlet_HIT_COOLDOWN = 500; // ms between hits on same enemy
 
 // Upgrade thresholds (earlier upgrades, then scales up)
-const UPGRADE_THRESHOLDS = [16, 50, 100, 180, 300, 480, 720, 1000, 1400, 1900, 2500, 3300, 4300, 5500, 7000];
+const UPGRADE_THRESHOLDS = [16, 50, 100, 180, 300, 480, 720, 1000, 1400, 1900, 2500, 3300, 4300, 5500, 7000, 9000, 12000, 15000];
 
 // Scroll config
 const SCROLL_TYPES = ['ScrollFire', 'ScrollIce', 'ScrollThunder'];
