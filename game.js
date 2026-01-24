@@ -8,6 +8,10 @@ const SPEED_BOOST_MULTIPLIER = 1.25;
 const SPEED_BOOST_DURATION = 1.5; // seconds
 const POST_UPGRADE_INVINCIBILITY = 1.5; // seconds of invincibility after upgrade
 
+// Patreon funding goal
+const PATREON_GOAL = 500; // $500/month goal
+let patreonCurrent = 0; // Current monthly amount (fetched or updated manually)
+
 function calculateScale() {
     const minDimension = Math.min(window.innerWidth, window.innerHeight);
     // Reduce scale on small screens (< 600px)
@@ -33,7 +37,8 @@ const TILE_TYPES = {
     // Horizontal mountain (column 7, rows 1-3)
     MOUNTAIN_H_LEFT: { col: 1, row: 7, blocking: true, overlay: true },
     MOUNTAIN_H_MID: { col: 2, row: 7, blocking: true, overlay: true },
-    MOUNTAIN_H_RIGHT: { col: 3, row: 7, blocking: true, overlay: true }
+    MOUNTAIN_H_RIGHT: { col: 3, row: 7, blocking: true, overlay: true },
+    PLANT: { blocking: false, isPlant: true }
 };
 
 const tileMap = new Map(); // Sparse storage: "x,y" -> tile type
@@ -190,6 +195,15 @@ async function loadGameData() {
     } catch (error) {
         console.error('Failed to load game data:', error);
     }
+
+    // Load Patreon progress (optional, fails silently)
+    try {
+        const patreonResponse = await fetch('patreon.json');
+        const patreonData = await patreonResponse.json();
+        patreonCurrent = patreonData.current || 0;
+    } catch (error) {
+        // Patreon data is optional, default to 0
+    }
 }
 
 // Load all images
@@ -212,7 +226,8 @@ function loadImages(callback) {
         // Scroll effect spritesheets
         { name: 'EffectThunder', src: 'images/Items/Effect/Thunder/SpriteSheet.png' },
         { name: 'EffectFire', src: 'images/Items/Effect/Flam/SpriteSheet.png' },
-        { name: 'EffectIce', src: 'images/Items/Effect/Ice/SpriteSheet.png' }
+        { name: 'EffectIce', src: 'images/Items/Effect/Ice/SpriteSheet.png' },
+        { name: 'plant', src: 'images/Items/Plant/SpriteSheet16x16.png' }
     ];
 
     // Add monster images based on monsters.json
@@ -512,6 +527,9 @@ function getTileAt(tileX, tileY) {
     } else if (rand < 0.04) {
         // ~2% chance: decorated grass
         tileType = TILE_TYPES.GRASS_DECORATED;
+    } else if (rand < 0.045) {
+        // ~0.5% chance: decorative plant
+        tileType = TILE_TYPES.PLANT;
     }
 
     tileMap.set(key, tileType);
@@ -552,6 +570,14 @@ function drawBackground() {
                     images.ground,
                     tileType.col * TILE_SIZE, tileType.row * TILE_SIZE, TILE_SIZE, TILE_SIZE,
                     screenX, screenY, SCALED_TILE, SCALED_TILE
+                );
+            } else if (tileType.isPlant) {
+                // Draw animated plant decorations (4 frames, 200ms per frame)
+                const plantFrame = Math.floor(Date.now() / 200) % 4;
+                ctx.drawImage(
+                    images.plant,
+                    plantFrame * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE,
+                    screenX+SCALED_TILE/4, screenY, SCALED_TILE/2, SCALED_TILE/2
                 );
             } else if (tileType !== TILE_TYPES.GRASS) {
                 // Draw non-overlay, non-grass tiles (like decorated grass)
@@ -969,10 +995,10 @@ function drawGameOver() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    ctx.font = '24px "Press Start 2P", monospace';
+    ctx.font = '32px "Press Start 2P", monospace';
     ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 120);
 
-    ctx.font = '12px "Press Start 2P", monospace';
+    ctx.font = '16px "Press Start 2P", monospace';
     ctx.fillText(`Final Score: ${Math.floor(score)}`, canvas.width / 2, canvas.height / 2 - 70);
 
     const buttons = getGameOverButtonBounds();
@@ -985,17 +1011,17 @@ function drawGameOver() {
     ctx.strokeRect(buttons.restart.x, buttons.restart.y, buttons.restart.width, buttons.restart.height);
 
     ctx.fillStyle = 'white';
-    ctx.font = '12px "Press Start 2P", monospace';
+    ctx.font = '14px "Press Start 2P", monospace';
     ctx.fillText('RESTART', canvas.width / 2, buttons.restart.y + buttons.restart.height / 2);
 
     // Credits
     ctx.fillStyle = '#aaa';
-    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.font = '10px "Press Start 2P", monospace';
     ctx.fillText('Created by AgentRateLimit', canvas.width / 2, canvas.height / 2 + 50);
 
     // Patreon message
     ctx.fillStyle = '#ccc';
-    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.font = '10px "Press Start 2P", monospace';
     ctx.fillText('Digital wealth for everyone by open source.', canvas.width / 2, canvas.height / 2 + 75);
 
     // Fund the mission button
@@ -1010,7 +1036,7 @@ function drawGameOver() {
     drawHeart(buttons.fund.x + 25, buttons.fund.y + buttons.fund.height / 2 - 8, 12);
 
     ctx.fillStyle = 'white';
-    ctx.font = '10px "Press Start 2P", monospace';
+    ctx.font = '12px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('Fund the Mission', buttons.fund.x + buttons.fund.width / 2 + 10, buttons.fund.y + buttons.fund.height / 2);
 
@@ -1024,6 +1050,51 @@ function drawGameOver() {
     // GitHub icon
     ctx.fillStyle = 'white';
     drawGitHubIcon(buttons.github.x + buttons.github.width / 2, buttons.github.y + buttons.github.height / 2, 18);
+
+    // Patreon progress bar
+    drawPatreonProgress(buttons.fund.y + buttons.fund.height + 20);
+}
+
+function drawPatreonProgress(startY) {
+    const maxBarWidth = 340;
+    const barWidth = Math.min(maxBarWidth, canvas.width - 40);
+    const barHeight = 26;
+    const barX = (canvas.width - barWidth) / 2;
+    const barY = startY;
+
+    // Calculate progress
+    const progress = Math.min(1, patreonCurrent / PATREON_GOAL);
+
+    // Draw bar background
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+
+    // Draw progress fill with gradient effect
+    if (progress > 0) {
+        ctx.fillStyle = '#f96854';
+        ctx.fillRect(barX, barY, barWidth * progress, barHeight);
+
+        // Highlight on top of progress
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.fillRect(barX, barY, barWidth * progress, barHeight / 3);
+    }
+
+    // Draw border
+    ctx.strokeStyle = '#f96854';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+    // Draw amount text
+    ctx.fillStyle = 'white';
+    ctx.font = '10px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`$${patreonCurrent} / $${PATREON_GOAL}`, canvas.width / 2, barY + barHeight / 2);
+
+    // Draw goal description
+    ctx.fillStyle = '#aaa';
+    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.fillText('Goal: New game every week!', canvas.width / 2, barY + barHeight + 14);
 }
 
 function formatStatChanges(weaponData, currentLevel, nextLevel) {
