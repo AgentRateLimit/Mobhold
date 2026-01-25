@@ -15,7 +15,9 @@ Support on Patreon https://www.patreon.com/c/agentratelimit/membership
 # 🏆 Credits
 
 Assets: Ninja Adventure Asset Pack by pixel-boy (CC0 - free for any use, attribution appreciated!)
+
 Cursors: https://wenrexa.itch.io/cursors-pack-03
+
 Character and background: https://game-endeavor.itch.io/mystic-woods
 
 # 📄 License
