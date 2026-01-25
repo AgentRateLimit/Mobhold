@@ -201,6 +201,14 @@ let gamepad = {
     buttons: { start: false, prevStart: false }
 };
 
+// Keyboard state
+let keyboard = {
+    up: false,
+    down: false,
+    left: false,
+    right: false
+};
+
 // Images
 const images = {};
 
@@ -487,6 +495,49 @@ window.addEventListener('gamepaddisconnected', (e) => {
         gamepad.index = null;
         gamepad.leftStick = { x: 0, y: 0 };
         gamepad.buttons = { start: false, prevStart: false };
+    }
+});
+
+// Keyboard event handlers
+window.addEventListener('keydown', (e) => {
+    switch(e.code) {
+        case 'ArrowUp':
+        case 'KeyW':
+            keyboard.up = true;
+            break;
+        case 'ArrowDown':
+        case 'KeyS':
+            keyboard.down = true;
+            break;
+        case 'ArrowLeft':
+        case 'KeyA':
+            keyboard.left = true;
+            break;
+        case 'ArrowRight':
+        case 'KeyD':
+            keyboard.right = true;
+            break;
+    }
+});
+
+window.addEventListener('keyup', (e) => {
+    switch(e.code) {
+        case 'ArrowUp':
+        case 'KeyW':
+            keyboard.up = false;
+            break;
+        case 'ArrowDown':
+        case 'KeyS':
+            keyboard.down = false;
+            break;
+        case 'ArrowLeft':
+        case 'KeyA':
+            keyboard.left = false;
+            break;
+        case 'ArrowRight':
+        case 'KeyD':
+            keyboard.right = false;
+            break;
     }
 });
 
@@ -1702,6 +1753,27 @@ function updatePlayer(dt) {
             player.facingRight = gamepad.leftStick.x > 0;
         }
         player.moving = false; // Cancel click-to-move
+    }
+    // Keyboard: Use arrow keys / WASD (second priority)
+    else if (keyboard.up || keyboard.down || keyboard.left || keyboard.right) {
+        const kbX = (keyboard.right ? 1 : 0) - (keyboard.left ? 1 : 0);
+        const kbY = (keyboard.down ? 1 : 0) - (keyboard.up ? 1 : 0);
+
+        // Normalize diagonal movement
+        const length = Math.sqrt(kbX * kbX + kbY * kbY);
+        if (length > 0) {
+            moveX = (kbX / length) * PLAYER_SPEED * speedMultiplier * dt;
+            moveY = (kbY / length) * PLAYER_SPEED * speedMultiplier * dt;
+            isMoving = true;
+
+            // Update facing direction based on keyboard
+            if (kbX !== 0) {
+                player.facingRight = kbX > 0;
+            }
+            player.moving = false; // Cancel click-to-move
+            player.targetX = player.x; // Clear old target
+            player.targetY = player.y;
+        }
     }
     // Mobile: Use joystick input
     else if (isMobile && (joystick.dirX !== 0 || joystick.dirY !== 0)) {
