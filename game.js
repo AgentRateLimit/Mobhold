@@ -1,5 +1,7 @@
 // Game constants
 const TILE_SIZE = 16;
+const PLAYER_TILE_SIZE = 48;
+const PLAYER_SCALED_SIZE = 128;  // Display player at 96x96
 const BASE_SCALE = 3;
 let scale = BASE_SCALE;
 let SCALED_TILE = TILE_SIZE * scale;
@@ -151,7 +153,8 @@ const player = {
     frame: 0,
     frameTime: 0,
     facingRight: true,
-    moving: false
+    moving: false,
+    direction: 'front'  // 'front', 'side', 'back'
 };
 
 // Arrays for game objects
@@ -240,7 +243,7 @@ async function loadGameData() {
 function loadImages(callback) {
     const imagesToLoad = [
         { name: 'ground', src: 'images/plains.png' },
-        { name: 'player', src: 'images/Characters/NinjaDark/SpriteSheet.png' },
+        { name: 'player', src: 'images/player.png' },
         // Projectiles
         { name: 'Arrow', src: 'images/Items/Projectile/Arrow.png' },
         { name: 'Shuriken', src: 'images/Items/Projectile/Shuriken.png' },
@@ -349,7 +352,9 @@ canvas.addEventListener('mousemove', (e) => {
         }
     }
 
-    canvas.style.cursor = isOverButton ? 'pointer' : 'default';
+    canvas.style.cursor = (isOverButton || mouseHeld)
+        ? "url('images/StoneCursorWenrexa/PNG/15.png'), pointer"
+        : "url('images/StoneCursorWenrexa/PNG/11.png'), auto";
 });
 
 // Desktop mouse input
@@ -359,12 +364,14 @@ function handleMouseDown(e) {
     mouseScreenX = e.clientX - rect.left;
     mouseScreenY = e.clientY - rect.top;
     mouseHeld = true;
+    canvas.style.cursor = "url('images/StoneCursorWenrexa/PNG/15.png'), auto";
     handleInputAt(mouseScreenX, mouseScreenY);
 }
 
 function handleMouseUp() {
     if (isMobile) return;
     mouseHeld = false;
+    canvas.style.cursor = "url('images/StoneCursorWenrexa/PNG/11.png'), auto";
     // Don't stop player.moving - let them continue to final destination
 }
 
@@ -754,27 +761,33 @@ function drawBackground() {
 }
 
 function drawPlayer() {
-    const screenX = player.x - cameraX + canvas.width / 2 - SCALED_TILE / 2;
-    const screenY = player.y - cameraY + canvas.height / 2 - SCALED_TILE / 2;
+    const screenX = player.x - cameraX + canvas.width / 2 - PLAYER_SCALED_SIZE / 2;
+    const screenY = player.y - cameraY + canvas.height / 2 - PLAYER_SCALED_SIZE / 2;
 
-    const frameX = 0;
-    const frameY = player.moving ? player.frame : 0;
+    // Calculate sprite row based on direction and moving state
+    // Idle: front=0, side=1, back=2
+    // Walking: front=3, side=4, back=5
+    const directionRow = { front: 0, side: 1, back: 2 };
+    const baseRow = directionRow[player.direction] || 0;
+    const frameY = player.moving ? baseRow + 3 : baseRow;
+    const frameX = player.moving ? (player.frame % 6) : 0;
 
     ctx.save();
 
-    if (!player.facingRight) {
-        ctx.translate(screenX + SCALED_TILE, screenY);
+    // Only flip horizontally for side sprites when facing left
+    if (player.direction === 'side' && !player.facingRight) {
+        ctx.translate(screenX + PLAYER_SCALED_SIZE, screenY);
         ctx.scale(-1, 1);
         ctx.drawImage(
             images.player,
-            frameX * TILE_SIZE, frameY * TILE_SIZE, TILE_SIZE, TILE_SIZE,
-            0, 0, SCALED_TILE, SCALED_TILE
+            frameX * PLAYER_TILE_SIZE, frameY * PLAYER_TILE_SIZE, PLAYER_TILE_SIZE, PLAYER_TILE_SIZE,
+            0, 0, PLAYER_SCALED_SIZE, PLAYER_SCALED_SIZE
         );
     } else {
         ctx.drawImage(
             images.player,
-            frameX * TILE_SIZE, frameY * TILE_SIZE, TILE_SIZE, TILE_SIZE,
-            screenX, screenY, SCALED_TILE, SCALED_TILE
+            frameX * PLAYER_TILE_SIZE, frameY * PLAYER_TILE_SIZE, PLAYER_TILE_SIZE, PLAYER_TILE_SIZE,
+            screenX, screenY, PLAYER_SCALED_SIZE, PLAYER_SCALED_SIZE
         );
     }
     ctx.restore();
@@ -1755,7 +1768,19 @@ function updatePlayer(dt) {
         player.frameTime += dt;
         if (player.frameTime > 0.15) {
             player.frameTime = 0;
-            player.frame = (player.frame + 1) % 4;
+            player.frame = (player.frame + 1) % 6;
+        }
+
+        // Set direction based on primary movement axis
+        const absX = Math.abs(moveX);
+        const absY = Math.abs(moveY);
+        if (absY > absX) {
+            // Vertical movement dominant
+            player.direction = moveY < 0 ? 'back' : 'front';
+        } else {
+            // Horizontal movement dominant
+            player.direction = 'side';
+            player.facingRight = moveX > 0;
         }
     }
 
