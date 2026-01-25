@@ -7,6 +7,7 @@ const PLAYER_SPEED = 150;
 const SPEED_BOOST_MULTIPLIER = 1.25;
 const SPEED_BOOST_DURATION = 1.5; // seconds
 const POST_UPGRADE_INVINCIBILITY = 1.5; // seconds of invincibility after upgrade
+const POST_UPGRADE_DELAY = 1.0; // seconds of pause after selecting upgrade
 
 // Patreon funding goal
 const PATREON_GOAL = 500; // $500/month goal
@@ -118,6 +119,7 @@ let spawnPhasesData = [];
 
 // Game state
 let gameState = 'loading'; // 'loading', 'playing', 'upgrading', 'gameover', 'paused'
+let readyTimer = 0; // Countdown overlay after upgrade/unpause
 let score = 0;
 let highScore = 0;
 let lastTime = 0;
@@ -168,6 +170,11 @@ let scrollEffects = [];   // Active visual effects
 
 // Mobile joystick state
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
+
+// Desktop mouse state for continuous movement
+let mouseHeld = false;
+let mouseScreenX = 0;
+let mouseScreenY = 0;
 const JOYSTICK_BASE_RADIUS = 60;
 const JOYSTICK_KNOB_RADIUS = 30;
 const JOYSTICK_DEAD_ZONE = 10;
@@ -287,19 +294,25 @@ function loadImages(callback) {
 }
 
 // Input handling
-canvas.addEventListener('click', handleInput);
+canvas.addEventListener('mousedown', handleMouseDown);
+canvas.addEventListener('mouseup', handleMouseUp);
+canvas.addEventListener('mouseleave', handleMouseUp);
 
 // Helper to check if point is inside a button
 function isPointInButton(x, y, btn) {
     return x >= btn.x && x <= btn.x + btn.width && y >= btn.y && y <= btn.y + btn.height;
 }
 
-// Cursor hover effect
+// Cursor hover effect and mouse tracking
 canvas.addEventListener('mousemove', (e) => {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     let isOverButton = false;
+
+    // Track mouse position for continuous movement
+    mouseScreenX = x;
+    mouseScreenY = y;
 
     if (gameState === 'playing') {
         const pauseBtn = getPauseButtonBounds();
@@ -339,11 +352,20 @@ canvas.addEventListener('mousemove', (e) => {
     canvas.style.cursor = isOverButton ? 'pointer' : 'default';
 });
 
-// Desktop input
-function handleInput(e) {
-    if (isMobile) return; // Ignore clicks on mobile
+// Desktop mouse input
+function handleMouseDown(e) {
+    if (isMobile) return;
     const rect = canvas.getBoundingClientRect();
-    handleInputAt(e.clientX - rect.left, e.clientY - rect.top);
+    mouseScreenX = e.clientX - rect.left;
+    mouseScreenY = e.clientY - rect.top;
+    mouseHeld = true;
+    handleInputAt(mouseScreenX, mouseScreenY);
+}
+
+function handleMouseUp() {
+    if (isMobile) return;
+    mouseHeld = false;
+    // Don't stop player.moving - let them continue to final destination
 }
 
 // Mobile joystick touch handling
@@ -495,6 +517,7 @@ function handleInputAt(screenX, screenY) {
         // Check resume button
         if (screenX >= buttons.resume.x && screenX <= buttons.resume.x + buttons.resume.width &&
             screenY >= buttons.resume.y && screenY <= buttons.resume.y + buttons.resume.height) {
+            readyTimer = POST_UPGRADE_DELAY;
             gameState = 'playing';
             return;
         }
@@ -530,9 +553,9 @@ function handleInputAt(screenX, screenY) {
 
     if (gameState !== 'playing') return;
 
-    // Check pause button click
+    // Check pause button click (not during ready countdown)
     const pauseBtn = getPauseButtonBounds();
-    if (screenX >= pauseBtn.x && screenX <= pauseBtn.x + pauseBtn.width &&
+    if (readyTimer <= 0 && screenX >= pauseBtn.x && screenX <= pauseBtn.x + pauseBtn.width &&
         screenY >= pauseBtn.y && screenY <= pauseBtn.y + pauseBtn.height) {
         gameState = 'paused';
         return;
@@ -564,6 +587,7 @@ function handleUpgradeClick(screenX, screenY) {
         if (screenX >= buttonX && screenX <= buttonX + buttonWidth &&
             screenY >= buttonY && screenY <= buttonY + buttonHeight) {
             applyUpgrade(upgradeOptions[i]);
+            readyTimer = POST_UPGRADE_DELAY;
             gameState = 'playing';
             return;
         }
@@ -737,11 +761,6 @@ function drawPlayer() {
     const frameY = player.moving ? player.frame : 0;
 
     ctx.save();
-
-    // Flash player when invincible
-    if (invincibilityTimer > 0 && Math.floor(invincibilityTimer * 8) % 2 === 0) {
-        ctx.globalAlpha = 0.5;
-    }
 
     if (!player.facingRight) {
         ctx.translate(screenX + SCALED_TILE, screenY);
@@ -1426,6 +1445,26 @@ function drawPauseMenu() {
     ctx.fillText('More Games', buttons.moreGames.x + buttons.moreGames.width / 2, buttons.moreGames.y + buttons.moreGames.height / 2);
 }
 
+function drawReadyOverlay() {
+    // Semi-transparent overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Pulsing "GET READY" text
+    const pulse = 0.9 + Math.sin(Date.now() / 80) * 0.1;
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.scale(pulse, pulse);
+
+    ctx.fillStyle = '#ffcc00';
+    ctx.font = '24px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('GET READY!', 0, 0);
+
+    ctx.restore();
+}
+
 function formatStatChanges(weaponData, currentLevel, nextLevel) {
     const current = weaponData.levels[currentLevel];
     const next = weaponData.levels[nextLevel];
@@ -1621,9 +1660,10 @@ function handleGamepadButtons() {
 
     // Start button: Toggle pause (edge-triggered)
     if (gamepad.buttons.start && !gamepad.buttons.prevStart) {
-        if (gameState === 'playing') {
+        if (gameState === 'playing' && readyTimer <= 0) {
             gameState = 'paused';
         } else if (gameState === 'paused') {
+            readyTimer = POST_UPGRADE_DELAY;
             gameState = 'playing';
         }
     }
@@ -1661,15 +1701,24 @@ function updatePlayer(dt) {
             player.facingRight = joystick.dirX > 0;
         }
     }
-    // Desktop: Use click-to-move
-    else if (!isMobile && player.moving) {
+    // Desktop: Use mouse-to-move (continuous while held)
+    else if (!isMobile && (mouseHeld || player.moving)) {
+        // Continuously update target while mouse is held
+        if (mouseHeld) {
+            player.targetX = mouseScreenX + cameraX - canvas.width / 2;
+            player.targetY = mouseScreenY + cameraY - canvas.height / 2;
+            player.moving = true;
+            // Update arrow weapon facing angle
+            playerFacingAngle = Math.atan2(player.targetY - player.y, player.targetX - player.x);
+        }
+
         const dx = player.targetX - player.x;
         const dy = player.targetY - player.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
-        if (dist < 5) {
+        if (dist < 5 && !mouseHeld) {
             player.moving = false;
-        } else {
+        } else if (dist >= 5) {
             moveX = (dx / dist) * PLAYER_SPEED * speedMultiplier * dt;
             moveY = (dy / dist) * PLAYER_SPEED * speedMultiplier * dt;
             isMoving = true;
@@ -2543,6 +2592,7 @@ function restartGame() {
     spawnTimer = 0;
     speedBoostTimer = 0;
     invincibilityTimer = 0;
+    readyTimer = 0;
 
     // Reset to starting weapon
     playerWeapons = [{
@@ -2565,7 +2615,12 @@ function gameLoop(timestamp) {
     ctx.fillStyle = '#1a1a2e';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    if (gameState === 'playing') {
+    // Countdown ready timer
+    if (readyTimer > 0) {
+        readyTimer -= dt;
+    }
+
+    if (gameState === 'playing' && readyTimer <= 0) {
         // Update spawn rate based on game time
         updateSpawnRate(dt);
 
@@ -2614,6 +2669,8 @@ function gameLoop(timestamp) {
         drawUpgradeMenu();
     } else if (gameState === 'paused') {
         drawPauseMenu();
+    } else if (readyTimer > 0) {
+        drawReadyOverlay();
     }
 
     requestAnimationFrame(gameLoop);
