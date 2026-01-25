@@ -3,13 +3,13 @@
     "type": "Arrow",
     "description": "shoots in direction the user last clicked/touched",
     "levels": [
-      { "cooldown": 2, "damage": 15 },
-      { "cooldown": 1.8, "damage": 15 },
-      { "cooldown": 1.5, "damage": 18 },
-      { "cooldown": 1.2, "damage": 18 },
-      { "cooldown": 1, "damage": 20 },
-      { "cooldown": 0.8, "damage": 22 },
-      { "cooldown": 0.5, "damage": 25 }
+      { "cooldown": 2, "damage": 30 },
+      { "cooldown": 1.8, "damage": 35 },
+      { "cooldown": 1.6, "damage": 40 },
+      { "cooldown": 1.4, "damage": 45 },
+      { "cooldown": 1.2, "damage": 50 },
+      { "cooldown": 1, "damage": 60 },
+      { "cooldown": 0.8, "damage": 100 }
     ]
   },
   {
