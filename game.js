@@ -268,7 +268,9 @@ function loadImages(callback) {
         { name: 'EffectThunder', src: 'images/Items/Effect/Thunder/SpriteSheet.png' },
         { name: 'EffectFire', src: 'images/Items/Effect/Flam/SpriteSheet.png' },
         { name: 'EffectIce', src: 'images/Items/Effect/Ice/SpriteSheet.png' },
-        { name: 'plant', src: 'images/Items/Plant/SpriteSheet16x16.png' }
+        { name: 'plant', src: 'images/Items/Plant/SpriteSheet16x16.png' },
+        // GitHub SVG icon
+        { name: 'GitHub', src: 'images/GitHub_Invertocat_White.svg' }
     ];
 
     // Add monster images based on monsters.json
@@ -332,8 +334,7 @@ canvas.addEventListener('mousemove', (e) => {
         const buttons = getPauseMenuButtonBounds();
         if (isPointInButton(x, y, buttons.resume) ||
             isPointInButton(x, y, buttons.fund) ||
-            isPointInButton(x, y, buttons.github) ||
-            isPointInButton(x, y, buttons.moreGames)) {
+            isPointInButton(x, y, buttons.github)) {
             isOverButton = true;
         }
     } else if (gameState === 'gameover') {
@@ -594,12 +595,7 @@ function handleInputAt(screenX, screenY) {
             return;
         }
 
-        // Check more games button
-        if (screenX >= buttons.moreGames.x && screenX <= buttons.moreGames.x + buttons.moreGames.width &&
-            screenY >= buttons.moreGames.y && screenY <= buttons.moreGames.y + buttons.moreGames.height) {
-            window.open('https://agentratelimit.github.io/website/', '_blank');
-            return;
-        }
+        // More Games button removed
 
         return;
     }
@@ -1240,33 +1236,16 @@ function drawHeart(x, y, size) {
 }
 
 function drawGitHubIcon(x, y, size) {
-    ctx.save();
-    ctx.translate(x, y);
-
-    // Circle (head)
-    ctx.beginPath();
-    ctx.arc(0, -size * 0.1, size * 0.45, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Body/tentacles
-    ctx.beginPath();
-    ctx.arc(0, size * 0.5, size * 0.25, Math.PI, 0, true);
-    ctx.fill();
-
-    // Arms
-    ctx.beginPath();
-    ctx.moveTo(-size * 0.35, size * 0.1);
-    ctx.quadraticCurveTo(-size * 0.5, size * 0.4, -size * 0.3, size * 0.6);
-    ctx.lineWidth = size * 0.12;
-    ctx.strokeStyle = ctx.fillStyle;
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(size * 0.35, size * 0.1);
-    ctx.quadraticCurveTo(size * 0.5, size * 0.4, size * 0.3, size * 0.6);
-    ctx.stroke();
-
-    ctx.restore();
+    // Draw the loaded GitHub SVG icon centered at (x, y)
+    const icon = images.GitHub;
+    if (icon && icon.complete && icon.naturalWidth > 0) {
+        ctx.save();
+        ctx.translate(x, y);
+        // SVGs are loaded as images, so scale to fit the requested size
+        const drawSize = size * 2; // SVG is square, so use size*2 for better visibility
+        ctx.drawImage(icon, -drawSize/2, -drawSize/2, drawSize, drawSize);
+        ctx.restore();
+    }
 }
 
 function drawGameOver() {
@@ -1417,12 +1396,7 @@ function getPauseMenuButtonBounds() {
             width: githubSize,
             height: fundHeight
         },
-        moreGames: {
-            x: (canvas.width - moreGamesWidth) / 2,
-            y: moreGamesY,
-            width: moreGamesWidth,
-            height: moreGamesHeight
-        }
+        // More Games button removed
     };
 }
 
@@ -1496,17 +1470,7 @@ function drawPauseMenu() {
     // Patreon progress bar
     drawPatreonProgress(buttons.fund.y + buttons.fund.height + 20);
 
-    // More games button
-    ctx.fillStyle = '#2a4a6a';
-    ctx.fillRect(buttons.moreGames.x, buttons.moreGames.y, buttons.moreGames.width, buttons.moreGames.height);
-    ctx.strokeStyle = '#4a8aca';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(buttons.moreGames.x, buttons.moreGames.y, buttons.moreGames.width, buttons.moreGames.height);
-
-    ctx.fillStyle = 'white';
-    ctx.font = '12px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('More Games', buttons.moreGames.x + buttons.moreGames.width / 2, buttons.moreGames.y + buttons.moreGames.height / 2);
+    // More Games button removed
 }
 
 function drawReadyOverlay() {
