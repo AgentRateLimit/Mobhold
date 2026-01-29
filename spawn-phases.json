@@ -51,7 +51,7 @@
     },
     {
         "startTime": 160,
-        "spawnInterval": 1500,
+        "spawnInterval": 1300,
         "enemies": {
             "SpiderYellow": 20,
             "YellowBat": 15,
@@ -64,7 +64,7 @@
     },
     {
         "startTime": 200,
-        "spawnInterval": 1200,
+        "spawnInterval": 900,
         "enemies": {
             "SpiderYellow": 15,
             "YellowBat": 10,
@@ -78,7 +78,7 @@
     },
     {
         "startTime": 240,
-        "spawnInterval": 1000,
+        "spawnInterval": 700,
         "enemies": {
             "SpiderYellow": 10,
             "YellowBat": 10,

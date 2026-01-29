@@ -26,6 +26,8 @@ Ice: https://nyknck.itch.io/ice-shard
 
 Flame: https://ikoiku.itch.io/16-x-16-pixel-art-character-flame
 
+Heart: https://lil-cthulhu.itch.io/heart-fullempty
+
 # 📄 License
 MIT License - See LICENSE for details.
 

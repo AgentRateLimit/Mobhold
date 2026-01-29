@@ -11,6 +11,19 @@ const SPEED_BOOST_DURATION = 1.5; // seconds
 const POST_UPGRADE_INVINCIBILITY = 1.5; // seconds of invincibility after upgrade
 const POST_UPGRADE_DELAY = 1.0; // seconds of pause after selecting upgrade
 
+// Lives system
+const MAX_LIVES = 3;
+const STARTING_LIVES = 1;
+const DAMAGE_INVINCIBILITY = 1.5; // seconds after taking damage
+const KNOCKBACK_RADIUS = 150;     // pixels
+const KNOCKBACK_FORCE = 200;      // push strength
+
+// Heart collectibles
+const HEART_SPAWN_MIN = 20000;    // 20 seconds minimum between spawns
+const HEART_SPAWN_MAX = 45000;    // 45 seconds maximum
+const HEART_COLLECT_RADIUS = 60;  // pickup distance
+const HEART_DESPAWN_TIME = 15000; // disappear after 15 seconds
+
 // Patreon funding goal
 const PATREON_GOAL = 500; // $500/month goal
 let patreonCurrent = 0; // Current monthly amount (fetched or updated manually)
@@ -59,6 +72,13 @@ const SWARM_SPAWN_RADIUS_MIN = 400;
 const SWARM_SPAWN_RADIUS_MAX = 550;
 const CENTER_DEAD_ZONE = 50;
 
+// Ambush spawn constants
+const AMBUSH_FIRST_DELAY = 20000;    // First ambush after 20 seconds
+const AMBUSH_BASE_INTERVAL = 20000;  // Base interval (20s)
+const AMBUSH_MIN_INTERVAL = 6000;    // Minimum interval in late game (6s)
+const AMBUSH_DISTANCE_TILES = 4;     // Spawn 4 tiles ahead
+const SPAWN_EVENT_MIN_GAP = 4000;    // Minimum gap between swarm and ambush (4s)
+
 // Bomb constants
 const BOMB_TRAVEL_DISTANCE = 100;
 const BOMB_FUSE_TIME = 1000;
@@ -77,7 +97,7 @@ const Circlet_HIT_COOLDOWN = 500; // ms between hits on same enemy
 const SHURIKEN_SPIN_SPEED = 12; // radians per second
 
 // Upgrade thresholds (earlier upgrades, then scales up)
-const UPGRADE_THRESHOLDS = [16, 50, 100, 180, 300, 480, 720, 1000, 1400, 1900, 2500, 3300, 4300, 5500, 7000, 9000, 12000, 15000, 20000];
+const UPGRADE_THRESHOLDS = [16, 50, 100, 180, 300, 480, 720, 1000, 1400, 1900, 2500, 3300, 4300, 5500, 7000, 9000, 12000, 15000, 20000, 40000];
 
 // Scroll config
 const SCROLL_TYPES = ['ScrollFire', 'ScrollIce', 'ScrollThunder'];
@@ -134,14 +154,29 @@ let currentSpawnInterval = DEFAULT_SPAWN_INTERVAL;
 let nextUpgradeIndex = 0;
 let swarmTimer = 0; // Track time until next swarm event
 let firstSwarmDone = false; // Track if first swarm has occurred
+let lastSwarmTime = -SPAWN_EVENT_MIN_GAP; // Game time of last swarm
+let ambushTimer = 0;
+let firstAmbushDone = false;
+let lastAmbushTime = -SPAWN_EVENT_MIN_GAP; // Game time of last ambush
 let speedBoostTimer = 0; // Time remaining on speed boost after upgrade
 let invincibilityTimer = 0; // Time remaining where enemies can't kill player
+
+// Lives system state
+let playerLives = STARTING_LIVES;
+let damageInvincibilityTimer = 0;
+let heartCollectibles = [];       // { x, y, spawnTime }
+let heartSpawnTimer = 0;
+let nextHeartSpawnTime = 0;
 
 // Player weapons
 let playerWeapons = []; // Array of { type: string, level: number, cooldownTimer: number }
 
 // Player facing angle (for Arrow direction)
 let playerFacingAngle = 0;
+
+// Player last movement direction (for ambush spawns)
+let playerLastDirX = 0;
+let playerLastDirY = 1; // Default: facing down
 
 // Camera/World offset
 let cameraX = 0;
@@ -284,7 +319,10 @@ function loadImages(callback) {
         { name: 'Pentagram', src: 'images/pentagram.png' },
         // Status effect overlays
         { name: 'Ice', src: 'images/ice.png' },
-        { name: 'Flame', src: 'images/flame.png' }
+        { name: 'Flame', src: 'images/flame.png' },
+        // Heart icons for lives system
+        { name: 'Heart_full', src: 'images/Heart_full.png' },
+        { name: 'Heart_empty', src: 'images/Heart_empty.png' }
     ];
 
     // Add monster images based on monsters.json
@@ -870,6 +908,13 @@ function drawPlayer() {
 
     ctx.save();
 
+    // Flicker effect when damage invincibility is active
+    if (damageInvincibilityTimer > 0) {
+        // Alternate alpha based on time for flicker effect
+        const flickerAlpha = Math.sin(Date.now() / 50) > 0 ? 1 : 0.3;
+        ctx.globalAlpha = flickerAlpha;
+    }
+
     // Only flip horizontally for side sprites when facing left
     if (player.direction === 'side' && !player.facingRight) {
         ctx.translate(screenX + PLAYER_SCALED_SIZE, screenY);
@@ -1245,6 +1290,28 @@ function drawJoystick() {
     }
 }
 
+function drawLivesUI() {
+    if (gameState !== 'playing') return;
+
+    const heartSize = 64;
+    const spacing = 0;
+    const statusBarY = 10;
+    const statusBarHeight = 30;
+    const startY = statusBarY + statusBarHeight + 10; // Below XP status bar
+    const totalWidth = MAX_LIVES * heartSize + (MAX_LIVES - 1) * spacing;
+    const startX = (canvas.width - totalWidth) / 2; // Centered
+
+    for (let i = 0; i < MAX_LIVES; i++) {
+        const x = startX + i * (heartSize + spacing);
+        const isFilled = i < playerLives;
+        const heartImage = isFilled ? images.Heart_full : images.Heart_empty;
+
+        if (heartImage && heartImage.complete && heartImage.naturalWidth > 0) {
+            ctx.drawImage(heartImage, x, startY, heartSize, heartSize);
+        }
+    }
+}
+
 function drawPauseButton() {
     if (gameState !== 'playing') return;
 
@@ -1285,6 +1352,7 @@ function drawUI() {
     drawWeaponList();
     drawJoystick();
     drawPauseButton();
+    drawLivesUI();
 }
 
 function getGameOverButtonBounds() {
@@ -1917,6 +1985,13 @@ function updatePlayer(dt) {
             player.direction = 'side';
             player.facingRight = moveX > 0;
         }
+
+        // Store normalized movement direction for ambush spawns
+        const moveMagnitude = Math.sqrt(moveX * moveX + moveY * moveY);
+        if (moveMagnitude > 0) {
+            playerLastDirX = moveX / moveMagnitude;
+            playerLastDirY = moveY / moveMagnitude;
+        }
     }
 
     // Update player.moving flag for animation rendering (needed for joystick)
@@ -1940,19 +2015,27 @@ function updateEnemies(dt) {
         const dy = player.y - enemy.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
-        // Only trigger game over if not invincible
-        if (dist < SCALED_TILE * 0.4 && invincibilityTimer <= 0) {
-            gameState = 'gameover';
-            // Save high score if current score is higher
-            if (score > highScore) {
-                highScore = score;
-                try {
-                    localStorage.setItem('survivalHighScore', Math.floor(highScore).toString());
-                } catch (error) {
-                    // localStorage not available
+        // Check for player collision - only if not invincible
+        if (dist < SCALED_TILE * 0.4 && invincibilityTimer <= 0 && damageInvincibilityTimer <= 0) {
+            playerLives--;
+
+            if (playerLives <= 0) {
+                gameState = 'gameover';
+                // Save high score if current score is higher
+                if (score > highScore) {
+                    highScore = score;
+                    try {
+                        localStorage.setItem('survivalHighScore', Math.floor(highScore).toString());
+                    } catch (error) {
+                        // localStorage not available
+                    }
                 }
+                return;
+            } else {
+                // Player takes damage but survives - trigger invincibility and knockback
+                damageInvincibilityTimer = DAMAGE_INVINCIBILITY;
+                knockbackNearbyEnemies();
             }
-            return;
         }
 
         // Skip movement for frozen enemies
@@ -2000,6 +2083,119 @@ function updateEnemies(dt) {
         if (enemy.frameTime > 0.15) {
             enemy.frameTime = 0;
             enemy.frame = (enemy.frame + 1) % 4;
+        }
+    }
+}
+
+function spawnHeartCollectible() {
+    // Only spawn if player has less than max lives
+    if (playerLives >= MAX_LIVES) return;
+
+    // Spawn 200-400 pixels from player at random angle
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 200 + Math.random() * 200;
+    const x = player.x + Math.cos(angle) * distance;
+    const y = player.y + Math.sin(angle) * distance;
+
+    // Validate position is not blocked
+    if (!isPositionBlocked(x, y)) {
+        heartCollectibles.push({
+            x: x,
+            y: y,
+            spawnTime: Date.now()
+        });
+    }
+}
+
+function updateHeartCollectibles(dt) {
+    // Manage spawn timer
+    heartSpawnTimer += dt * 1000;
+
+    if (heartSpawnTimer >= nextHeartSpawnTime) {
+        heartSpawnTimer = 0;
+        nextHeartSpawnTime = HEART_SPAWN_MIN + Math.random() * (HEART_SPAWN_MAX - HEART_SPAWN_MIN);
+        spawnHeartCollectible();
+    }
+
+    // Check for pickup and despawn
+    const now = Date.now();
+    for (let i = heartCollectibles.length - 1; i >= 0; i--) {
+        const heart = heartCollectibles[i];
+
+        // Check if player can pick up (distance check)
+        const dx = player.x - heart.x;
+        const dy = player.y - heart.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < HEART_COLLECT_RADIUS && playerLives < MAX_LIVES) {
+            // Collect heart
+            playerLives++;
+            heartCollectibles.splice(i, 1);
+            continue;
+        }
+
+        // Check despawn time
+        if (now - heart.spawnTime > HEART_DESPAWN_TIME) {
+            heartCollectibles.splice(i, 1);
+        }
+    }
+}
+
+function drawHeartCollectibles() {
+    const heartImage = images.Heart_full;
+    if (!heartImage || !heartImage.complete || heartImage.naturalWidth === 0) return;
+
+    const now = Date.now();
+    const heartSize = SCALED_TILE * 1.2;
+
+    for (const heart of heartCollectibles) {
+        const age = now - heart.spawnTime;
+        const screenX = heart.x - cameraX + canvas.width / 2 - heartSize / 2;
+        const screenY = heart.y - cameraY + canvas.height / 2 - heartSize / 2;
+
+        // Bobbing animation
+        const bobOffset = Math.sin(now / 200) * 5;
+
+        // Fade/blink effect when about to despawn (last 3 seconds)
+        let alpha = 1;
+        const timeLeft = HEART_DESPAWN_TIME - age;
+        if (timeLeft < 3000) {
+            // Blink faster as time runs out
+            const blinkSpeed = 100 + (3000 - timeLeft) / 10;
+            alpha = 0.4 + Math.abs(Math.sin(now / blinkSpeed)) * 0.6;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(heartImage, screenX, screenY + bobOffset, heartSize, heartSize);
+        ctx.restore();
+    }
+}
+
+function knockbackNearbyEnemies() {
+    for (const enemy of enemies) {
+        const dx = enemy.x - player.x;
+        const dy = enemy.y - player.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < KNOCKBACK_RADIUS && dist > 0) {
+            // Push enemy away from player, scaled by distance (closer = stronger)
+            const force = KNOCKBACK_FORCE * (1 - dist / KNOCKBACK_RADIUS);
+            const pushX = (dx / dist) * force;
+            const pushY = (dy / dist) * force;
+
+            const newX = enemy.x + pushX;
+            const newY = enemy.y + pushY;
+
+            // Only apply knockback if new position is not blocked
+            if (!isPositionBlocked(newX, newY)) {
+                enemy.x = newX;
+                enemy.y = newY;
+            } else if (!isPositionBlocked(newX, enemy.y)) {
+                enemy.x = newX;
+            } else if (!isPositionBlocked(enemy.x, newY)) {
+                enemy.y = newY;
+            }
         }
     }
 }
@@ -2179,6 +2375,12 @@ function getCurrentSpawnPhase() {
     return currentPhase;
 }
 
+function getAmbushInterval() {
+    const timeSeconds = gameTime / 1000;
+    const progress = Math.min(1, timeSeconds / 240);
+    return AMBUSH_BASE_INTERVAL - (AMBUSH_BASE_INTERVAL - AMBUSH_MIN_INTERVAL) * progress;
+}
+
 function selectEnemyFromPhase(enemyWeights) {
     // Calculate total weight
     let totalWeight = 0;
@@ -2311,6 +2513,43 @@ function spawnSwarm() {
                 }
             });
         }
+    }
+}
+
+function spawnAmbush() {
+    const phase = getCurrentSpawnPhase();
+    const monsterData = selectEnemyFromPhase(phase.enemies);
+
+    // Skip if player hasn't moved
+    if (playerLastDirX === 0 && playerLastDirY === 0) return;
+
+    const spawnDistance = SCALED_TILE * AMBUSH_DISTANCE_TILES;
+    let spawnX = player.x + playerLastDirX * spawnDistance;
+    let spawnY = player.y + playerLastDirY * spawnDistance;
+
+    // Try perpendicular offsets if blocked
+    let attempts = 0;
+    while (isPositionBlocked(spawnX, spawnY) && attempts < 5) {
+        const perpX = -playerLastDirY;
+        const perpY = playerLastDirX;
+        const offset = (attempts % 2 === 0 ? 1 : -1) * Math.ceil((attempts + 1) / 2) * SCALED_TILE;
+        spawnX = player.x + playerLastDirX * spawnDistance + perpX * offset;
+        spawnY = player.y + playerLastDirY * spawnDistance + perpY * offset;
+        attempts++;
+    }
+
+    if (!isPositionBlocked(spawnX, spawnY)) {
+        pentagramEffects.push({
+            x: spawnX, y: spawnY, timer: 0,
+            enemyData: {
+                type: monsterData.type,
+                health: monsterData.health,
+                maxHealth: monsterData.health,
+                speed: monsterData.speed,
+                frame: 0, frameTime: 0,
+                facingRight: player.x > spawnX
+            }
+        });
     }
 }
 
@@ -2787,13 +3026,36 @@ function updateSpawnRate(dt) {
     currentSpawnInterval = Math.max(MIN_SPAWN_INTERVAL, phase.spawnInterval);
 
     // Trigger swarm event periodically (first one delayed, then regular interval)
-    if (!firstSwarmDone && gameTime >= SWARM_FIRST_DELAY) {
-        firstSwarmDone = true;
-        swarmTimer = 0;
-        spawnSwarm();
-    } else if (firstSwarmDone && swarmTimer >= SWARM_INTERVAL) {
-        swarmTimer = 0;
-        spawnSwarm();
+    // Check minimum gap from last ambush
+    const canSpawnSwarm = gameTime - lastAmbushTime >= SPAWN_EVENT_MIN_GAP;
+    if (canSpawnSwarm) {
+        if (!firstSwarmDone && gameTime >= SWARM_FIRST_DELAY) {
+            firstSwarmDone = true;
+            swarmTimer = 0;
+            lastSwarmTime = gameTime;
+            spawnSwarm();
+        } else if (firstSwarmDone && swarmTimer >= SWARM_INTERVAL) {
+            swarmTimer = 0;
+            lastSwarmTime = gameTime;
+            spawnSwarm();
+        }
+    }
+
+    // Trigger ambush spawn
+    // Check minimum gap from last swarm
+    ambushTimer += dt * 1000;
+    const canSpawnAmbush = gameTime - lastSwarmTime >= SPAWN_EVENT_MIN_GAP;
+    if (canSpawnAmbush) {
+        if (!firstAmbushDone && gameTime >= AMBUSH_FIRST_DELAY) {
+            firstAmbushDone = true;
+            ambushTimer = 0;
+            lastAmbushTime = gameTime;
+            spawnAmbush();
+        } else if (firstAmbushDone && ambushTimer >= getAmbushInterval()) {
+            ambushTimer = 0;
+            lastAmbushTime = gameTime;
+            spawnAmbush();
+        }
     }
 }
 
@@ -2803,6 +3065,10 @@ function restartGame() {
     gameTime = 0;
     swarmTimer = 0;
     firstSwarmDone = false;
+    lastSwarmTime = -SPAWN_EVENT_MIN_GAP;
+    ambushTimer = 0;
+    firstAmbushDone = false;
+    lastAmbushTime = -SPAWN_EVENT_MIN_GAP;
     currentSpawnInterval = spawnPhasesData[0]?.spawnInterval || DEFAULT_SPAWN_INTERVAL;
     nextUpgradeIndex = 0;
     player.x = 0;
@@ -2812,6 +3078,8 @@ function restartGame() {
     player.moving = false;
     player.frame = 0;
     playerFacingAngle = 0;
+    playerLastDirX = 0;
+    playerLastDirY = 1;
     cameraX = 0;
     cameraY = 0;
     enemies = [];
@@ -2826,6 +3094,13 @@ function restartGame() {
     speedBoostTimer = 0;
     invincibilityTimer = 0;
     readyTimer = 0;
+
+    // Reset lives system
+    playerLives = STARTING_LIVES;
+    damageInvincibilityTimer = 0;
+    heartCollectibles = [];
+    heartSpawnTimer = 0;
+    nextHeartSpawnTime = HEART_SPAWN_MIN + Math.random() * (HEART_SPAWN_MAX - HEART_SPAWN_MIN);
 
     // Reset to starting weapon
     playerWeapons = [{
@@ -2876,6 +3151,9 @@ function gameLoop(timestamp) {
         if (invincibilityTimer > 0) {
             invincibilityTimer -= dt;
         }
+        if (damageInvincibilityTimer > 0) {
+            damageInvincibilityTimer -= dt;
+        }
         updateEnemies(dt);
         updateProjectiles(dt);
         updateOrbitingProjectiles(dt);
@@ -2885,6 +3163,7 @@ function gameLoop(timestamp) {
         updateStatusEffects(dt);
         updateScrollEffects(dt);
         updatePentagramEffects(dt);
+        updateHeartCollectibles(dt);
     }
 
     // Draw everything
@@ -2894,6 +3173,7 @@ function gameLoop(timestamp) {
     drawBlood();
     drawScrollEffects();
     drawPentagramEffects();
+    drawHeartCollectibles();
     drawEnemies();
     drawPlayer();
     drawUI();
