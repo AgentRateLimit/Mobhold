@@ -166,6 +166,7 @@ let bloodSplatters = [];
 
 // Upgrade UI state
 let upgradeOptions = [];
+let selectedUpgradeIndex = -1;
 
 // Scroll state
 let playerScrolls = [];   // { type, nextTriggerTime }
@@ -501,6 +502,39 @@ window.addEventListener('gamepaddisconnected', (e) => {
 
 // Keyboard event handlers
 window.addEventListener('keydown', (e) => {
+    // Handle upgrade menu navigation
+    if (gameState === 'upgrading' && upgradeOptions.length > 0) {
+        switch(e.code) {
+            case 'ArrowUp':
+            case 'KeyW':
+                e.preventDefault();
+                if (selectedUpgradeIndex === -1) {
+                    selectedUpgradeIndex = upgradeOptions.length - 1;
+                } else {
+                    selectedUpgradeIndex = (selectedUpgradeIndex - 1 + upgradeOptions.length) % upgradeOptions.length;
+                }
+                return;
+            case 'ArrowDown':
+            case 'KeyS':
+                e.preventDefault();
+                if (selectedUpgradeIndex === -1) {
+                    selectedUpgradeIndex = 0;
+                } else {
+                    selectedUpgradeIndex = (selectedUpgradeIndex + 1) % upgradeOptions.length;
+                }
+                return;
+            case 'Enter':
+            case 'Space':
+                if (selectedUpgradeIndex >= 0) {
+                    e.preventDefault();
+                    applyUpgrade(upgradeOptions[selectedUpgradeIndex]);
+                    readyTimer = POST_UPGRADE_DELAY;
+                    gameState = 'playing';
+                }
+                return;
+        }
+    }
+
     switch(e.code) {
         case 'ArrowUp':
         case 'KeyW':
@@ -655,7 +689,9 @@ function applyUpgrade(option) {
         const initialDelay = config.minInterval + Math.random() * (config.maxInterval - config.minInterval);
         playerScrolls.push({
             type: option.type,
-            nextTriggerTime: gameTime + initialDelay
+            nextTriggerTime: gameTime + initialDelay,
+            cooldownStartTime: gameTime,
+            cooldownDuration: initialDelay
         });
     } else if (option.isNew) {
         // Add new weapon at level 0
@@ -1089,10 +1125,48 @@ function drawWeaponList() {
             } else {
                 ctx.drawImage(scrollImage, startX, startY, iconSize, iconSize);
             }
+
+            // Draw cooldown overlay masked to icon shape
+            const elapsed = gameTime - (scroll.cooldownStartTime || 0);
+            const duration = scroll.cooldownDuration || 1;
+            const cooldownProgress = Math.min(1.0, elapsed / duration);
+            drawScrollCooldown(startX, startY, iconSize, cooldownProgress, scrollImage);
         }
 
         startY += iconSize + spacing;
     }
+}
+
+function drawScrollCooldown(x, y, iconSize, progress, image) {
+    if (progress >= 1.0) return;
+
+    const centerX = x + iconSize / 2;
+    const centerY = y + iconSize / 2;
+    const radius = iconSize / 2;
+
+    // Use offscreen canvas to mask cooldown to icon shape
+    const offscreen = document.createElement('canvas');
+    offscreen.width = iconSize;
+    offscreen.height = iconSize;
+    const offCtx = offscreen.getContext('2d');
+
+    // Draw the icon as the mask
+    offCtx.imageSmoothingEnabled = false;
+    offCtx.drawImage(image, 0, 0, iconSize, iconSize);
+
+    // Draw radial sweep using source-atop to mask to icon shape
+    offCtx.globalCompositeOperation = 'source-atop';
+    offCtx.beginPath();
+    const startAngle = -Math.PI / 2;
+    const endAngle = startAngle + (1 - progress) * Math.PI * 2;
+    offCtx.moveTo(iconSize / 2, iconSize / 2);
+    offCtx.arc(iconSize / 2, iconSize / 2, radius, startAngle, endAngle, false);
+    offCtx.closePath();
+    offCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    offCtx.fill();
+
+    // Draw the masked result onto main canvas
+    ctx.drawImage(offscreen, x, y);
 }
 
 function drawJoystick() {
@@ -1552,24 +1626,26 @@ function drawUpgradeMenu() {
         const buttonX = (canvas.width - buttonWidth) / 2;
         const buttonY = startY + i * (buttonHeight + buttonSpacing);
 
+        const isSelected = i === selectedUpgradeIndex;
+
         // Button background and border - different colors for new vs upgrade vs scroll
         if (option.isScroll) {
-            ctx.fillStyle = '#4a2a5a';  // Purple tint for scrolls
+            ctx.fillStyle = isSelected ? '#6a3a7a' : '#4a2a5a';  // Purple tint for scrolls
             ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
-            ctx.strokeStyle = '#9a4aca';
-            ctx.lineWidth = 3;
+            ctx.strokeStyle = isSelected ? '#fff' : '#9a4aca';
+            ctx.lineWidth = isSelected ? 4 : 3;
             ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
         } else if (option.isNew) {
-            ctx.fillStyle = '#2a5a4a';  // Green tint for new weapons
+            ctx.fillStyle = isSelected ? '#3a7a5a' : '#2a5a4a';  // Green tint for new weapons
             ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
-            ctx.strokeStyle = '#4aca8a';
-            ctx.lineWidth = 3;
+            ctx.strokeStyle = isSelected ? '#fff' : '#4aca8a';
+            ctx.lineWidth = isSelected ? 4 : 3;
             ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
         } else {
-            ctx.fillStyle = '#2a4a6a';  // Blue tint for upgrades
+            ctx.fillStyle = isSelected ? '#3a5a8a' : '#2a4a6a';  // Blue tint for upgrades
             ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
-            ctx.strokeStyle = '#4a8aca';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = isSelected ? '#fff' : '#4a8aca';
+            ctx.lineWidth = isSelected ? 4 : 2;
             ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
         }
 
@@ -2016,6 +2092,7 @@ function checkForUpgrade() {
 function showUpgradeMenu() {
     gameState = 'upgrading';
     upgradeOptions = generateUpgradeOptions();
+    selectedUpgradeIndex = -1;
 }
 
 function generateUpgradeOptions() {
@@ -2450,7 +2527,10 @@ function updateScrolls(dt) {
             triggerScrollEffect(scroll);
             // Schedule next trigger
             const config = SCROLL_CONFIG[scroll.type];
-            scroll.nextTriggerTime = gameTime + config.minInterval + Math.random() * (config.maxInterval - config.minInterval);
+            const newCooldown = config.minInterval + Math.random() * (config.maxInterval - config.minInterval);
+            scroll.cooldownStartTime = gameTime;
+            scroll.cooldownDuration = newCooldown;
+            scroll.nextTriggerTime = gameTime + newCooldown;
         }
     }
 }
