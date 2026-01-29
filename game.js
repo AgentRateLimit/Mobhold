@@ -172,6 +172,11 @@ let selectedUpgradeIndex = -1;
 let playerScrolls = [];   // { type, nextTriggerTime }
 let scrollEffects = [];   // Active visual effects
 
+// Pentagram spawn effect state
+let pentagramEffects = []; // { x, y, timer, enemyData (null after spawned) }
+const PENTAGRAM_FADE_IN = 600;   // ms
+const PENTAGRAM_FADE_OUT = 300;  // ms
+
 // Mobile joystick state
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
 
@@ -271,7 +276,9 @@ function loadImages(callback) {
         { name: 'EffectIce', src: 'images/Items/Effect/Ice/SpriteSheet.png' },
         { name: 'plant', src: 'images/Items/Plant/SpriteSheet16x16.png' },
         // GitHub SVG icon
-        { name: 'GitHub', src: 'images/GitHub_Invertocat_White.svg' }
+        { name: 'GitHub', src: 'images/GitHub_Invertocat_White.svg' },
+        // Spawn effect
+        { name: 'Pentagram', src: 'images/pentagram.png' }
     ];
 
     // Add monster images based on monsters.json
@@ -2221,16 +2228,20 @@ function spawnEnemy() {
 
     // Only spawn if we found a valid position
     if (!isPositionBlocked(x, y)) {
-        enemies.push({
+        // Create pentagram effect with pending enemy spawn
+        pentagramEffects.push({
             x: x,
             y: y,
-            type: monsterData.type,
-            health: monsterData.health,
-            maxHealth: monsterData.health,
-            speed: monsterData.speed,
-            frame: 0,
-            frameTime: 0,
-            facingRight: true
+            timer: 0,
+            enemyData: {
+                type: monsterData.type,
+                health: monsterData.health,
+                maxHealth: monsterData.health,
+                speed: monsterData.speed,
+                frame: 0,
+                frameTime: 0,
+                facingRight: true
+            }
         });
     }
 }
@@ -2268,16 +2279,20 @@ function spawnSwarm() {
 
         // Only spawn if position is valid
         if (!isPositionBlocked(x, y)) {
-            enemies.push({
+            // Create pentagram effect with pending enemy spawn
+            pentagramEffects.push({
                 x: x,
                 y: y,
-                type: monsterData.type,
-                health: monsterData.health,
-                maxHealth: monsterData.health,
-                speed: monsterData.speed,
-                frame: 0,
-                frameTime: 0,
-                facingRight: player.x > x
+                timer: 0,
+                enemyData: {
+                    type: monsterData.type,
+                    health: monsterData.health,
+                    maxHealth: monsterData.health,
+                    speed: monsterData.speed,
+                    frame: 0,
+                    frameTime: 0,
+                    facingRight: player.x > x
+                }
             });
         }
     }
@@ -2687,6 +2702,57 @@ function drawScrollEffects() {
     }
 }
 
+function updatePentagramEffects(dt) {
+    const dtMs = dt * 1000;
+
+    for (let i = pentagramEffects.length - 1; i >= 0; i--) {
+        const effect = pentagramEffects[i];
+        effect.timer += dtMs;
+
+        // Spawn enemy when fade-in completes
+        if (effect.enemyData && effect.timer >= PENTAGRAM_FADE_IN) {
+            enemies.push({
+                x: effect.x,
+                y: effect.y,
+                ...effect.enemyData
+            });
+            effect.enemyData = null;
+        }
+
+        // Remove effect when fully faded out
+        if (effect.timer >= PENTAGRAM_FADE_IN + PENTAGRAM_FADE_OUT) {
+            pentagramEffects.splice(i, 1);
+        }
+    }
+}
+
+function drawPentagramEffects() {
+    const pentagramImage = images['Pentagram'];
+    if (!pentagramImage || !pentagramImage.complete || pentagramImage.naturalWidth === 0) return;
+
+    for (const effect of pentagramEffects) {
+        // Calculate opacity based on phase
+        let opacity;
+        if (effect.timer < PENTAGRAM_FADE_IN) {
+            // Fading in
+            opacity = effect.timer / PENTAGRAM_FADE_IN;
+        } else {
+            // Fading out
+            const fadeOutProgress = (effect.timer - PENTAGRAM_FADE_IN) / PENTAGRAM_FADE_OUT;
+            opacity = 1 - fadeOutProgress;
+        }
+
+        const effectSize = SCALED_TILE * 1.5;
+        const screenX = effect.x - cameraX + canvas.width / 2 - effectSize / 2;
+        const screenY = effect.y - cameraY + canvas.height / 2 - effectSize / 2;
+
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
+        ctx.drawImage(pentagramImage, screenX, screenY, effectSize, effectSize);
+        ctx.restore();
+    }
+}
+
 function updateSpawnRate(dt) {
     gameTime += dt * 1000;
     swarmTimer += dt * 1000;
@@ -2730,6 +2796,7 @@ function restartGame() {
     bloodSplatters = [];
     playerScrolls = [];
     scrollEffects = [];
+    pentagramEffects = [];
     spawnTimer = 0;
     speedBoostTimer = 0;
     invincibilityTimer = 0;
@@ -2792,6 +2859,7 @@ function gameLoop(timestamp) {
         updateScrolls(dt);
         updateStatusEffects(dt);
         updateScrollEffects(dt);
+        updatePentagramEffects(dt);
     }
 
     // Draw everything
@@ -2800,6 +2868,7 @@ function gameLoop(timestamp) {
     drawExplosions();
     drawBlood();
     drawScrollEffects();
+    drawPentagramEffects();
     drawEnemies();
     drawPlayer();
     drawUI();

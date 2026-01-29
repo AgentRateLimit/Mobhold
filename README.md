@@ -20,6 +20,8 @@ Cursors: https://wenrexa.itch.io/cursors-pack-03
 
 Character and background: https://game-endeavor.itch.io/mystic-woods
 
+Pixel art: https://bigwander.itch.io/
+
 # 📄 License
 MIT License - See LICENSE for details.
 
