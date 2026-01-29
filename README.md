@@ -22,6 +22,10 @@ Character and background: https://game-endeavor.itch.io/mystic-woods
 
 Pixel art: https://bigwander.itch.io/
 
+Ice: https://nyknck.itch.io/ice-shard
+
+Flame: https://ikoiku.itch.io/16-x-16-pixel-art-character-flame
+
 # 📄 License
 MIT License - See LICENSE for details.
 

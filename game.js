@@ -108,6 +108,9 @@ ctx.imageSmoothingEnabled = false;
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    // Ensure CSS size matches internal canvas size to prevent coordinate mismatch
+    canvas.style.width = canvas.width + 'px';
+    canvas.style.height = canvas.height + 'px';
     ctx.imageSmoothingEnabled = false;
     calculateScale();
 }
@@ -330,8 +333,8 @@ function isPointInButton(x, y, btn) {
 // Cursor hover effect and mouse tracking
 canvas.addEventListener('mousemove', (e) => {
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
     let isOverButton = false;
 
     // Track mouse position for continuous movement
@@ -373,25 +376,25 @@ canvas.addEventListener('mousemove', (e) => {
     }
 
     canvas.style.cursor = (isOverButton || mouseHeld)
-        ? "url('images/StoneCursorWenrexa/PNG/15.png'), pointer"
-        : "url('images/StoneCursorWenrexa/PNG/11.png'), auto";
+        ? "url('images/StoneCursorWenrexa/PNG/15.png') 16 16, pointer"
+        : "url('images/StoneCursorWenrexa/PNG/11.png') 16 16, auto";
 });
 
 // Desktop mouse input
 function handleMouseDown(e) {
     if (isMobile) return;
     const rect = canvas.getBoundingClientRect();
-    mouseScreenX = e.clientX - rect.left;
-    mouseScreenY = e.clientY - rect.top;
+    mouseScreenX = (e.clientX - rect.left) * (canvas.width / rect.width);
+    mouseScreenY = (e.clientY - rect.top) * (canvas.height / rect.height);
     mouseHeld = true;
-    canvas.style.cursor = "url('images/StoneCursorWenrexa/PNG/15.png'), auto";
+    canvas.style.cursor = "url('images/StoneCursorWenrexa/PNG/15.png') 16 16, auto";
     handleInputAt(mouseScreenX, mouseScreenY);
 }
 
 function handleMouseUp() {
     if (isMobile) return;
     mouseHeld = false;
-    canvas.style.cursor = "url('images/StoneCursorWenrexa/PNG/11.png'), auto";
+    canvas.style.cursor = "url('images/StoneCursorWenrexa/PNG/11.png') 16 16, auto";
     // Don't stop player.moving - let them continue to final destination
 }
 
@@ -401,8 +404,8 @@ canvas.addEventListener('touchstart', (e) => {
     const rect = canvas.getBoundingClientRect();
 
     for (const touch of e.changedTouches) {
-        const touchX = touch.clientX - rect.left;
-        const touchY = touch.clientY - rect.top;
+        const touchX = (touch.clientX - rect.left) * (canvas.width / rect.width);
+        const touchY = (touch.clientY - rect.top) * (canvas.height / rect.height);
 
         // Check if this is a UI interaction (game over, upgrade menu, paused)
         if (gameState === 'gameover' || gameState === 'upgrading' || gameState === 'paused') {
@@ -440,8 +443,8 @@ canvas.addEventListener('touchmove', (e) => {
 
     for (const touch of e.changedTouches) {
         if (touch.identifier === joystick.touchId) {
-            const touchX = touch.clientX - rect.left;
-            const touchY = touch.clientY - rect.top;
+            const touchX = (touch.clientX - rect.left) * (canvas.width / rect.width);
+            const touchY = (touch.clientY - rect.top) * (canvas.height / rect.height);
 
             // Calculate distance from joystick base
             const dx = touchX - joystick.baseX;
