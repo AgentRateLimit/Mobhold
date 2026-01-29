@@ -278,7 +278,10 @@ function loadImages(callback) {
         // GitHub SVG icon
         { name: 'GitHub', src: 'images/GitHub_Invertocat_White.svg' },
         // Spawn effect
-        { name: 'Pentagram', src: 'images/pentagram.png' }
+        { name: 'Pentagram', src: 'images/pentagram.png' },
+        // Status effect overlays
+        { name: 'Ice', src: 'images/ice.png' },
+        { name: 'Flame', src: 'images/flame.png' }
     ];
 
     // Add monster images based on monsters.json
@@ -926,17 +929,27 @@ function drawEnemies() {
 
         // Draw status effect indicators
         if (enemy.statusEffects) {
-            // Blue tint overlay for frozen enemies
+            // Ice overlay for frozen enemies
             if (enemy.statusEffects.freeze) {
-                ctx.fillStyle = 'rgba(100, 180, 255, 0.4)';
-                ctx.fillRect(screenX, screenY, SCALED_TILE, SCALED_TILE);
+                const iceImage = images['Ice'];
+                if (iceImage && iceImage.complete) {
+                    ctx.drawImage(iceImage, screenX, screenY, SCALED_TILE, SCALED_TILE);
+                }
             }
 
-            // Orange border for burning enemies
+            // Animated flame for burning enemies
             if (enemy.statusEffects.burn) {
-                ctx.strokeStyle = '#ff6600';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(screenX + 2, screenY + 2, SCALED_TILE - 4, SCALED_TILE - 4);
+                const flameImage = images['Flame'];
+                if (flameImage && flameImage.complete) {
+                    const frameX = enemy.statusEffects.burn.frame * 32;
+                    const flameSize = SCALED_TILE * 2;
+                    const offset = (flameSize - SCALED_TILE) / 2;
+                    ctx.drawImage(
+                        flameImage,
+                        frameX, 0, 32, 32,
+                        screenX - offset, screenY - offset, flameSize, flameSize
+                    );
+                }
             }
         }
     }
@@ -2590,7 +2603,9 @@ function triggerScrollEffect(scroll) {
                 damage: config.burnDamage,
                 duration: config.burnDuration,
                 tickInterval: config.tickInterval,
-                nextTickTime: gameTime + config.tickInterval
+                nextTickTime: gameTime + config.tickInterval,
+                frame: 0,
+                frameTimer: 0
             };
             break;
 
@@ -2625,6 +2640,13 @@ function updateStatusEffects(dt) {
         if (enemy.statusEffects.burn) {
             const burn = enemy.statusEffects.burn;
             burn.duration -= dt * 1000;
+
+            // Animate burn frames (6 frames at ~80ms each)
+            burn.frameTimer += dt * 1000;
+            if (burn.frameTimer >= 80) {
+                burn.frameTimer = 0;
+                burn.frame = (burn.frame + 1) % 6;
+            }
 
             if (gameTime >= burn.nextTickTime) {
                 enemy.health -= burn.damage;
