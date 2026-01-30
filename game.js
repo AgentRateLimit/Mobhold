@@ -76,7 +76,7 @@ const CENTER_DEAD_ZONE = 50;
 const AMBUSH_FIRST_DELAY = 20000;    // First ambush after 20 seconds
 const AMBUSH_BASE_INTERVAL = 20000;  // Base interval (20s)
 const AMBUSH_MIN_INTERVAL = 6000;    // Minimum interval in late game (6s)
-const AMBUSH_DISTANCE_TILES = 4;     // Spawn 4 tiles ahead
+const AMBUSH_DISTANCE_TILES = 6;     // Spawn 6 tiles ahead
 const SPAWN_EVENT_MIN_GAP = 4000;    // Minimum gap between swarm and ambush (4s)
 
 // Bomb constants
@@ -197,10 +197,19 @@ const player = {
 
 // Arrays for game objects
 let enemies = [];
+let enemySet = new Set(); // Fast lookup for enemy existence checks
+let nextEnemyId = 0; // Unique ID counter for enemies
 let projectiles = [];
 let orbitingProjectiles = [];
 let explosions = [];
 let bloodSplatters = [];
+
+// Performance: Frame-cached values
+let frameTimestamp = 0; // Cached Date.now() per frame
+
+// Performance: Cached offscreen canvas for scroll cooldown
+let cooldownCanvas = null;
+let cooldownCtx = null;
 
 // Upgrade UI state
 let upgradeOptions = [];
@@ -846,6 +855,23 @@ function isPositionBlocked(worldX, worldY) {
     return tileType.blocking;
 }
 
+/// Performance: Viewport culling helper
+function isInViewport(x, y, padding = SCALED_TILE) {
+    return x >= cameraX - canvas.width/2 - padding &&
+           x <= cameraX + canvas.width/2 + padding &&
+           y >= cameraY - canvas.height/2 - padding &&
+           y <= cameraY + canvas.height/2 + padding;
+}
+
+// Performance: Helper to remove enemy (maintains Set and uses swap-and-pop)
+function removeEnemy(index) {
+    const enemy = enemies[index];
+    enemySet.delete(enemy);
+    // Swap with last element and pop (O(1) instead of O(n) splice)
+    enemies[index] = enemies[enemies.length - 1];
+    enemies.pop();
+}
+
 // Drawing functions
 function drawBackground() {
     const startX = Math.floor((cameraX - canvas.width / 2) / SCALED_TILE) * SCALED_TILE;
@@ -876,7 +902,7 @@ function drawBackground() {
                 );
             } else if (tileType.isPlant) {
                 // Draw animated plant decorations (4 frames, 200ms per frame)
-                const plantFrame = Math.floor(Date.now() / 200) % 4;
+                const plantFrame = Math.floor(frameTimestamp / 200) % 4;
                 ctx.drawImage(
                     images.plant,
                     plantFrame * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE,
@@ -911,7 +937,7 @@ function drawPlayer() {
     // Flicker effect when damage invincibility is active
     if (damageInvincibilityTimer > 0) {
         // Alternate alpha based on time for flicker effect
-        const flickerAlpha = Math.sin(Date.now() / 50) > 0 ? 1 : 0.3;
+        const flickerAlpha = Math.sin(frameTimestamp / 50) > 0 ? 1 : 0.3;
         ctx.globalAlpha = flickerAlpha;
     }
 
@@ -936,6 +962,9 @@ function drawPlayer() {
 
 function drawEnemies() {
     for (const enemy of enemies) {
+        // Viewport culling - skip offscreen enemies
+        if (!isInViewport(enemy.x, enemy.y)) continue;
+
         const screenX = enemy.x - cameraX + canvas.width / 2 - SCALED_TILE / 2;
         const screenY = enemy.y - cameraY + canvas.height / 2 - SCALED_TILE / 2;
 
@@ -1005,6 +1034,9 @@ function drawEnemies() {
 
 function drawProjectiles() {
     for (const proj of projectiles) {
+        // Viewport culling - skip offscreen projectiles
+        if (!isInViewport(proj.x, proj.y)) continue;
+
         const screenX = proj.x - cameraX + canvas.width / 2 - SCALED_TILE / 2;
         const screenY = proj.y - cameraY + canvas.height / 2 - SCALED_TILE / 2;
 
@@ -1033,6 +1065,9 @@ function drawProjectiles() {
 
     // Draw orbiting projectiles
     for (const proj of orbitingProjectiles) {
+        // Viewport culling - skip offscreen orbiting projectiles
+        if (!isInViewport(proj.x, proj.y)) continue;
+
         const screenX = proj.x - cameraX + canvas.width / 2 - SCALED_TILE / 2;
         const screenY = proj.y - cameraY + canvas.height / 2 - SCALED_TILE / 2;
 
@@ -1063,6 +1098,9 @@ function drawExplosions() {
     const EXPLOSION_TILE_SIZE = 32; // 128x128 sprite sheet / 4x4 grid = 32px tiles
 
     for (const explosion of explosions) {
+        // Viewport culling - skip offscreen explosions
+        if (!isInViewport(explosion.x, explosion.y, explosion.radius)) continue;
+
         // Calculate frame position in 4x4 sprite sheet (row by row, top-left first)
         const frameX = explosion.frame % 4;
         const frameY = Math.floor(explosion.frame / 4);
@@ -1085,13 +1123,15 @@ function drawBlood() {
     if (!bloodImage || !bloodImage.complete || bloodImage.naturalWidth === 0) return;
 
     const BLOOD_TILE_SIZE = 32; // 128x128 sprite sheet / 4x4 grid = 32px tiles
+    const bloodSize = SCALED_TILE*2;
 
     for (const blood of bloodSplatters) {
+        // Viewport culling - skip offscreen blood
+        if (!isInViewport(blood.x, blood.y, bloodSize)) continue;
+
         // Calculate frame position in 4x4 sprite sheet (row by row, top-left first)
         const frameX = blood.frame % 4;
         const frameY = Math.floor(blood.frame / 4);
-
-        const bloodSize = SCALED_TILE*2;
 
         const screenX = blood.x - cameraX + canvas.width / 2 - bloodSize / 2;
         const screenY = blood.y - cameraY + canvas.height / 2 - bloodSize / 2;
@@ -1208,33 +1248,37 @@ function drawWeaponList() {
 function drawScrollCooldown(x, y, iconSize, progress, image) {
     if (progress >= 1.0) return;
 
-    const centerX = x + iconSize / 2;
-    const centerY = y + iconSize / 2;
     const radius = iconSize / 2;
 
-    // Use offscreen canvas to mask cooldown to icon shape
-    const offscreen = document.createElement('canvas');
-    offscreen.width = iconSize;
-    offscreen.height = iconSize;
-    const offCtx = offscreen.getContext('2d');
+    // Lazy-initialize and reuse offscreen canvas
+    if (!cooldownCanvas || cooldownCanvas.width !== iconSize) {
+        cooldownCanvas = document.createElement('canvas');
+        cooldownCanvas.width = iconSize;
+        cooldownCanvas.height = iconSize;
+        cooldownCtx = cooldownCanvas.getContext('2d');
+        cooldownCtx.imageSmoothingEnabled = false;
+    }
+
+    // Clear and reuse the canvas
+    cooldownCtx.globalCompositeOperation = 'source-over';
+    cooldownCtx.clearRect(0, 0, iconSize, iconSize);
 
     // Draw the icon as the mask
-    offCtx.imageSmoothingEnabled = false;
-    offCtx.drawImage(image, 0, 0, iconSize, iconSize);
+    cooldownCtx.drawImage(image, 0, 0, iconSize, iconSize);
 
     // Draw radial sweep using source-atop to mask to icon shape
-    offCtx.globalCompositeOperation = 'source-atop';
-    offCtx.beginPath();
+    cooldownCtx.globalCompositeOperation = 'source-atop';
+    cooldownCtx.beginPath();
     const startAngle = -Math.PI / 2;
     const endAngle = startAngle + (1 - progress) * Math.PI * 2;
-    offCtx.moveTo(iconSize / 2, iconSize / 2);
-    offCtx.arc(iconSize / 2, iconSize / 2, radius, startAngle, endAngle, false);
-    offCtx.closePath();
-    offCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    offCtx.fill();
+    cooldownCtx.moveTo(iconSize / 2, iconSize / 2);
+    cooldownCtx.arc(iconSize / 2, iconSize / 2, radius, startAngle, endAngle, false);
+    cooldownCtx.closePath();
+    cooldownCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    cooldownCtx.fill();
 
     // Draw the masked result onto main canvas
-    ctx.drawImage(offscreen, x, y);
+    ctx.drawImage(cooldownCanvas, x, y);
 }
 
 function drawJoystick() {
@@ -1644,7 +1688,7 @@ function drawReadyOverlay() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Pulsing "GET READY" text
-    const pulse = 0.9 + Math.sin(Date.now() / 80) * 0.1;
+    const pulse = 0.9 + Math.sin(frameTimestamp / 80) * 0.1;
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.scale(pulse, pulse);
@@ -2102,7 +2146,7 @@ function spawnHeartCollectible() {
         heartCollectibles.push({
             x: x,
             y: y,
-            spawnTime: Date.now()
+            spawnTime: frameTimestamp
         });
     }
 }
@@ -2118,7 +2162,7 @@ function updateHeartCollectibles(dt) {
     }
 
     // Check for pickup and despawn
-    const now = Date.now();
+    const now = frameTimestamp;
     for (let i = heartCollectibles.length - 1; i >= 0; i--) {
         const heart = heartCollectibles[i];
 
@@ -2145,10 +2189,11 @@ function drawHeartCollectibles() {
     const heartImage = images.Heart_full;
     if (!heartImage || !heartImage.complete || heartImage.naturalWidth === 0) return;
 
-    const now = Date.now();
+    const now = frameTimestamp;
     const heartSize = SCALED_TILE * 1.2;
 
     for (const heart of heartCollectibles) {
+        if (!isInViewport(heart.x, heart.y, heartSize)) continue;
         const age = now - heart.spawnTime;
         const screenX = heart.x - cameraX + canvas.width / 2 - heartSize / 2;
         const screenY = heart.y - cameraY + canvas.height / 2 - heartSize / 2;
@@ -2244,7 +2289,7 @@ function updateProjectiles(dt) {
 
                         if (enemy.health <= 0) {
                             score += enemy.maxHealth;
-                            enemies.splice(j, 1);
+                            removeEnemy(j);
                             checkForUpgrade();
                         }
                     }
@@ -2288,7 +2333,7 @@ function updateProjectiles(dt) {
                     if (enemy.health <= 0) {
                         // Award points based on monster's max health
                         score += enemy.maxHealth;
-                        enemies.splice(j, 1);
+                        removeEnemy(j);
 
                         // Check for upgrade
                         checkForUpgrade();
@@ -2732,9 +2777,8 @@ function updateOrbitingProjectiles(dt) {
         for (let j = enemies.length - 1; j >= 0; j--) {
             const enemy = enemies[j];
 
-            // Skip if enemy is on cooldown for this Circlet
-            const enemyId = enemies.indexOf(enemy);
-            if (proj.hitCooldowns[enemyId]) continue;
+            // Skip if enemy is on cooldown for this Circlet (using unique enemy ID)
+            if (proj.hitCooldowns[enemy.id]) continue;
 
             const dx = proj.x - enemy.x;
             const dy = proj.y - enemy.y;
@@ -2745,11 +2789,11 @@ function updateOrbitingProjectiles(dt) {
                 enemy.health -= proj.damage;
                 bloodSplatters.push({ x: enemy.x, y: enemy.y, frame: 0, frameTimer: 0 });
                 // Add hit cooldown for this enemy
-                proj.hitCooldowns[enemyId] = Circlet_HIT_COOLDOWN;
+                proj.hitCooldowns[enemy.id] = Circlet_HIT_COOLDOWN;
 
                 if (enemy.health <= 0) {
                     score += enemy.maxHealth;
-                    enemies.splice(j, 1);
+                    removeEnemy(j);
                     checkForUpgrade();
                 }
             }
@@ -2833,7 +2877,7 @@ function triggerScrollEffect(scroll) {
             if (targetEnemy.health <= 0) {
                 score += targetEnemy.maxHealth;
                 const idx = enemies.indexOf(targetEnemy);
-                if (idx !== -1) enemies.splice(idx, 1);
+                if (idx !== -1) removeEnemy(idx);
                 checkForUpgrade();
             }
             break;
@@ -2897,7 +2941,7 @@ function updateStatusEffects(dt) {
 
                 if (enemy.health <= 0) {
                     score += enemy.maxHealth;
-                    enemies.splice(i, 1);
+                    removeEnemy(i);
                     checkForUpgrade();
                     continue;
                 }
@@ -2924,8 +2968,8 @@ function updateScrollEffects(dt) {
         const effect = scrollEffects[i];
         effect.frameTimer += dt * 1000;
 
-        // Follow the target enemy if it still exists
-        if (effect.targetEnemy && enemies.includes(effect.targetEnemy)) {
+        // Follow the target enemy if it still exists (using Set for O(1) lookup)
+        if (effect.targetEnemy && enemySet.has(effect.targetEnemy)) {
             effect.x = effect.targetEnemy.x;
             effect.y = effect.targetEnemy.y;
         }
@@ -2945,7 +2989,12 @@ function updateScrollEffects(dt) {
 }
 
 function drawScrollEffects() {
+    const effectSize = SCALED_TILE * 2;
+
     for (const effect of scrollEffects) {
+        // Viewport culling - skip offscreen effects
+        if (!isInViewport(effect.x, effect.y, effectSize)) continue;
+
         const scrollType = 'Scroll' + effect.type;
         const config = SCROLL_CONFIG[scrollType];
         const effectImage = images['Effect' + effect.type];
@@ -2953,7 +3002,6 @@ function drawScrollEffects() {
 
         const frameWidth = config.frameWidth;
         const frameHeight = effectImage.naturalHeight;
-        const effectSize = SCALED_TILE * 2;
 
         const screenX = effect.x - cameraX + canvas.width / 2 - effectSize / 2;
         const screenY = effect.y - cameraY + canvas.height / 2 - effectSize / 2;
@@ -2975,11 +3023,14 @@ function updatePentagramEffects(dt) {
 
         // Spawn enemy when fade-in completes
         if (effect.enemyData && effect.timer >= PENTAGRAM_FADE_IN) {
-            enemies.push({
+            const newEnemy = {
+                id: nextEnemyId++,
                 x: effect.x,
                 y: effect.y,
                 ...effect.enemyData
-            });
+            };
+            enemies.push(newEnemy);
+            enemySet.add(newEnemy);
             effect.enemyData = null;
         }
 
@@ -2994,7 +3045,12 @@ function drawPentagramEffects() {
     const pentagramImage = images['Pentagram'];
     if (!pentagramImage || !pentagramImage.complete || pentagramImage.naturalWidth === 0) return;
 
+    const effectSize = SCALED_TILE * 1.5;
+
     for (const effect of pentagramEffects) {
+        // Viewport culling - skip offscreen effects
+        if (!isInViewport(effect.x, effect.y, effectSize)) continue;
+
         // Calculate opacity based on phase
         let opacity;
         if (effect.timer < PENTAGRAM_FADE_IN) {
@@ -3006,7 +3062,6 @@ function drawPentagramEffects() {
             opacity = 1 - fadeOutProgress;
         }
 
-        const effectSize = SCALED_TILE * 1.5;
         const screenX = effect.x - cameraX + canvas.width / 2 - effectSize / 2;
         const screenY = effect.y - cameraY + canvas.height / 2 - effectSize / 2;
 
@@ -3083,6 +3138,8 @@ function restartGame() {
     cameraX = 0;
     cameraY = 0;
     enemies = [];
+    enemySet.clear();
+    nextEnemyId = 0;
     projectiles = [];
     orbitingProjectiles = [];
     explosions = [];
@@ -3114,6 +3171,9 @@ function restartGame() {
 function gameLoop(timestamp) {
     const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
     lastTime = timestamp;
+
+    // Cache Date.now() for this frame to avoid multiple syscalls
+    frameTimestamp = Date.now();
 
     // Poll gamepad every frame (required by Gamepad API)
     pollGamepad();
