@@ -24,9 +24,14 @@ const HEART_SPAWN_MAX = 45000;    // 45 seconds maximum
 const HEART_COLLECT_RADIUS = 60;  // pickup distance
 const HEART_DESPAWN_TIME = 15000; // disappear after 15 seconds
 
-// Patreon funding goal
-const PATREON_GOAL = 500; // $500/month goal
-let patreonCurrent = 0; // Current monthly amount (fetched or updated manually)
+const CREDITS = [
+    { text: 'Created by AgentRateLimit', url: 'https://github.com/AgentRateLimit', color: '#aaa' },
+    { text: 'Assets: Ninja Adventure by pixel-boy', url: 'https://pixel-boy.itch.io/ninja-adventure-asset-pack', color: '#777' },
+    { text: 'Cursors: wenrexa', url: 'https://wenrexa.itch.io/cursors-pack-03', color: '#777' },
+    { text: 'Character: game-endeavor', url: 'https://game-endeavor.itch.io/mystic-woods', color: '#777' },
+    { text: 'Pixel art: bigwander', url: 'https://bigwander.itch.io/', color: '#777' },
+];
+
 
 function calculateScale() {
     const minDimension = Math.min(window.innerWidth, window.innerHeight);
@@ -280,14 +285,6 @@ async function loadGameData() {
         console.error('Failed to load game data:', error);
     }
 
-    // Load Patreon progress (optional, fails silently)
-    try {
-        const patreonResponse = await fetch('patreon.json');
-        const patreonData = await patreonResponse.json();
-        patreonCurrent = patreonData.current || 0;
-    } catch (error) {
-        // Patreon data is optional, default to 0
-    }
 
     // Load high score from localStorage
     try {
@@ -324,6 +321,8 @@ function loadImages(callback) {
         { name: 'plant', src: 'images/Items/Plant/SpriteSheet16x16.png' },
         // GitHub SVG icon
         { name: 'GitHub', src: 'images/GitHub_Invertocat_White.svg' },
+        // SlopGames icon
+        { name: 'SlopGames', src: 'slopgames.png' },
         // Spawn effect
         { name: 'Pentagram', src: 'images/pentagram.png' },
         // Status effect overlays
@@ -394,15 +393,17 @@ canvas.addEventListener('mousemove', (e) => {
     } else if (gameState === 'paused') {
         const buttons = getPauseMenuButtonBounds();
         if (isPointInButton(x, y, buttons.resume) ||
-            isPointInButton(x, y, buttons.fund) ||
-            isPointInButton(x, y, buttons.github)) {
+            isPointInButton(x, y, buttons.github) ||
+            isPointInButton(x, y, buttons.slopgames) ||
+            getCreditLinkAt(x, y)) {
             isOverButton = true;
         }
     } else if (gameState === 'gameover') {
         const buttons = getGameOverButtonBounds();
         if (isPointInButton(x, y, buttons.restart) ||
-            isPointInButton(x, y, buttons.fund) ||
-            isPointInButton(x, y, buttons.github)) {
+            isPointInButton(x, y, buttons.github) ||
+            isPointInButton(x, y, buttons.slopgames) ||
+            getCreditLinkAt(x, y)) {
             isOverButton = true;
         }
     } else if (gameState === 'upgrading') {
@@ -640,6 +641,13 @@ function handleInputAt(screenX, screenY) {
     if (gameState === 'gameover') {
         const buttons = getGameOverButtonBounds();
 
+        // Check credit links
+        const creditUrl = getCreditLinkAt(screenX, screenY);
+        if (creditUrl) {
+            window.open(creditUrl, '_blank');
+            return;
+        }
+
         // Check restart button
         if (screenX >= buttons.restart.x && screenX <= buttons.restart.x + buttons.restart.width &&
             screenY >= buttons.restart.y && screenY <= buttons.restart.y + buttons.restart.height) {
@@ -647,17 +655,17 @@ function handleInputAt(screenX, screenY) {
             return;
         }
 
-        // Check fund button
-        if (screenX >= buttons.fund.x && screenX <= buttons.fund.x + buttons.fund.width &&
-            screenY >= buttons.fund.y && screenY <= buttons.fund.y + buttons.fund.height) {
-            window.open('https://www.patreon.com/15462430/join', '_blank');
-            return;
-        }
-
         // Check github button
         if (screenX >= buttons.github.x && screenX <= buttons.github.x + buttons.github.width &&
             screenY >= buttons.github.y && screenY <= buttons.github.y + buttons.github.height) {
             window.open('https://github.com/AgentRateLimit/Mobhold', '_blank');
+            return;
+        }
+
+        // Check slopgames button
+        if (screenX >= buttons.slopgames.x && screenX <= buttons.slopgames.x + buttons.slopgames.width &&
+            screenY >= buttons.slopgames.y && screenY <= buttons.slopgames.y + buttons.slopgames.height) {
+            window.open('https://agentratelimit.github.io/website/', '_blank');
             return;
         }
 
@@ -667,6 +675,13 @@ function handleInputAt(screenX, screenY) {
     if (gameState === 'paused') {
         const buttons = getPauseMenuButtonBounds();
 
+        // Check credit links
+        const creditUrl = getCreditLinkAt(screenX, screenY);
+        if (creditUrl) {
+            window.open(creditUrl, '_blank');
+            return;
+        }
+
         // Check resume button
         if (screenX >= buttons.resume.x && screenX <= buttons.resume.x + buttons.resume.width &&
             screenY >= buttons.resume.y && screenY <= buttons.resume.y + buttons.resume.height) {
@@ -675,17 +690,17 @@ function handleInputAt(screenX, screenY) {
             return;
         }
 
-        // Check fund button
-        if (screenX >= buttons.fund.x && screenX <= buttons.fund.x + buttons.fund.width &&
-            screenY >= buttons.fund.y && screenY <= buttons.fund.y + buttons.fund.height) {
-            window.open('https://www.patreon.com/15462430/join', '_blank');
-            return;
-        }
-
         // Check github button
         if (screenX >= buttons.github.x && screenX <= buttons.github.x + buttons.github.width &&
             screenY >= buttons.github.y && screenY <= buttons.github.y + buttons.github.height) {
             window.open('https://github.com/AgentRateLimit/Mobhold', '_blank');
+            return;
+        }
+
+        // Check slopgames button
+        if (screenX >= buttons.slopgames.x && screenX <= buttons.slopgames.x + buttons.slopgames.width &&
+            screenY >= buttons.slopgames.y && screenY <= buttons.slopgames.y + buttons.slopgames.height) {
+            window.open('https://agentratelimit.github.io/website/', '_blank');
             return;
         }
 
@@ -1402,13 +1417,13 @@ function drawUI() {
 function getGameOverButtonBounds() {
     const restartWidth = 200;
     const restartHeight = 50;
-    const fundWidth = 280;
-    const fundHeight = 45;
-    const githubSize = 45;
+    const iconSize = 45;
+    const iconHeight = 45;
     const buttonSpacing = 15;
 
-    const fundY = canvas.height / 2 + 95;
-    const fundX = (canvas.width - fundWidth - buttonSpacing - githubSize) / 2;
+    const totalIconsWidth = iconSize + buttonSpacing + iconSize;
+    const iconsX = (canvas.width - totalIconsWidth) / 2;
+    const iconsY = canvas.height / 2 + 145;
 
     return {
         restart: {
@@ -1417,31 +1432,19 @@ function getGameOverButtonBounds() {
             width: restartWidth,
             height: restartHeight
         },
-        fund: {
-            x: fundX,
-            y: fundY,
-            width: fundWidth,
-            height: fundHeight
-        },
         github: {
-            x: fundX + fundWidth + buttonSpacing,
-            y: fundY,
-            width: githubSize,
-            height: fundHeight
+            x: iconsX,
+            y: iconsY,
+            width: iconSize,
+            height: iconHeight
+        },
+        slopgames: {
+            x: iconsX + iconSize + buttonSpacing,
+            y: iconsY,
+            width: iconSize,
+            height: iconHeight
         }
     };
-}
-
-function drawHeart(x, y, size) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.beginPath();
-    ctx.moveTo(0, size * 0.3);
-    ctx.bezierCurveTo(-size * 0.5, -size * 0.3, -size, size * 0.2, 0, size);
-    ctx.bezierCurveTo(size, size * 0.2, size * 0.5, -size * 0.3, 0, size * 0.3);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
 }
 
 function drawGitHubIcon(x, y, size) {
@@ -1452,6 +1455,51 @@ function drawGitHubIcon(x, y, size) {
         ctx.translate(x, y);
         // SVGs are loaded as images, so scale to fit the requested size
         const drawSize = size * 2; // SVG is square, so use size*2 for better visibility
+        ctx.drawImage(icon, -drawSize/2, -drawSize/2, drawSize, drawSize);
+        ctx.restore();
+    }
+}
+
+let creditBounds = []; // stored each frame for hit-testing
+
+function drawCredits(startY) {
+    const lineHeight = 16;
+    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    creditBounds = [];
+    for (let i = 0; i < CREDITS.length; i++) {
+        const credit = CREDITS[i];
+        const y = startY + lineHeight * i;
+        const textWidth = ctx.measureText(credit.text).width;
+        const bounds = {
+            x: canvas.width / 2 - textWidth / 2,
+            y: y - lineHeight / 2,
+            width: textWidth,
+            height: lineHeight
+        };
+        creditBounds.push({ bounds, url: credit.url });
+        ctx.fillStyle = credit.color;
+        ctx.fillText(credit.text, canvas.width / 2, y);
+    }
+}
+
+function getCreditLinkAt(x, y) {
+    for (const entry of creditBounds) {
+        const b = entry.bounds;
+        if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
+            return entry.url;
+        }
+    }
+    return null;
+}
+
+function drawSlopGamesIcon(x, y, size) {
+    const icon = images.SlopGames;
+    if (icon && icon.complete && icon.naturalWidth > 0) {
+        ctx.save();
+        ctx.translate(x, y);
+        const drawSize = size * 2;
         ctx.drawImage(icon, -drawSize/2, -drawSize/2, drawSize, drawSize);
         ctx.restore();
     }
@@ -1489,30 +1537,7 @@ function drawGameOver() {
     ctx.fillText('RESTART', canvas.width / 2, buttons.restart.y + buttons.restart.height / 2);
 
     // Credits
-    ctx.fillStyle = '#aaa';
-    ctx.font = '10px "Press Start 2P", monospace';
-    ctx.fillText('Created by AgentRateLimit', canvas.width / 2, canvas.height / 2 + 50);
-
-    // Patreon message
-    ctx.fillStyle = '#ccc';
-    ctx.font = '10px "Press Start 2P", monospace';
-    ctx.fillText('Digital wealth for everyone by open source.', canvas.width / 2, canvas.height / 2 + 75);
-
-    // Fund the mission button
-    ctx.fillStyle = '#8a2a4a';
-    ctx.fillRect(buttons.fund.x, buttons.fund.y, buttons.fund.width, buttons.fund.height);
-    ctx.strokeStyle = '#f96854';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(buttons.fund.x, buttons.fund.y, buttons.fund.width, buttons.fund.height);
-
-    // Heart icon
-    ctx.fillStyle = '#ff6b6b';
-    drawHeart(buttons.fund.x + 25, buttons.fund.y + buttons.fund.height / 2 - 8, 12);
-
-    ctx.fillStyle = 'white';
-    ctx.font = '12px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('Fund the Mission', buttons.fund.x + buttons.fund.width / 2 + 10, buttons.fund.y + buttons.fund.height / 2);
+    drawCredits(canvas.height / 2 + 40);
 
     // GitHub button
     ctx.fillStyle = '#2a2a2a';
@@ -1525,66 +1550,28 @@ function drawGameOver() {
     ctx.fillStyle = 'white';
     drawGitHubIcon(buttons.github.x + buttons.github.width / 2, buttons.github.y + buttons.github.height / 2, 18);
 
-    // Patreon progress bar
-    drawPatreonProgress(buttons.fund.y + buttons.fund.height + 20);
-}
+    // SlopGames button
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(buttons.slopgames.x, buttons.slopgames.y, buttons.slopgames.width, buttons.slopgames.height);
+    ctx.strokeStyle = '#6a6a6a';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(buttons.slopgames.x, buttons.slopgames.y, buttons.slopgames.width, buttons.slopgames.height);
 
-function drawPatreonProgress(startY) {
-    const maxBarWidth = 340;
-    const barWidth = Math.min(maxBarWidth, canvas.width - 40);
-    const barHeight = 26;
-    const barX = (canvas.width - barWidth) / 2;
-    const barY = startY;
-
-    // Calculate progress
-    const progress = Math.min(1, patreonCurrent / PATREON_GOAL);
-
-    // Draw bar background
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(barX, barY, barWidth, barHeight);
-
-    // Draw progress fill with gradient effect
-    if (progress > 0) {
-        ctx.fillStyle = '#f96854';
-        ctx.fillRect(barX, barY, barWidth * progress, barHeight);
-
-        // Highlight on top of progress
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.fillRect(barX, barY, barWidth * progress, barHeight / 3);
-    }
-
-    // Draw border
-    ctx.strokeStyle = '#f96854';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(barX, barY, barWidth, barHeight);
-
-    // Draw amount text
-    ctx.fillStyle = 'white';
-    ctx.font = '10px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`$${patreonCurrent} / $${PATREON_GOAL}`, canvas.width / 2, barY + barHeight / 2);
-
-    // Draw goal description
-    ctx.fillStyle = '#aaa';
-    ctx.font = '8px "Press Start 2P", monospace';
-    ctx.fillText('Goal: New game every week!', canvas.width / 2, barY + barHeight + 14);
+    // SlopGames icon
+    drawSlopGamesIcon(buttons.slopgames.x + buttons.slopgames.width / 2, buttons.slopgames.y + buttons.slopgames.height / 2, 18);
 }
 
 function getPauseMenuButtonBounds() {
     const resumeWidth = 200;
     const resumeHeight = 50;
-    const fundWidth = 280;
-    const fundHeight = 45;
-    const githubSize = 45;
-    const moreGamesWidth = 280;
-    const moreGamesHeight = 45;
+    const iconSize = 45;
+    const iconHeight = 45;
     const buttonSpacing = 15;
 
     const resumeY = canvas.height / 2 - 80;
-    const fundY = canvas.height / 2 + 30;
-    const fundX = (canvas.width - fundWidth - buttonSpacing - githubSize) / 2;
-    const moreGamesY = fundY + fundHeight + 80; // After patreon progress bar (bar height 26 + text 14 + spacing)
+    const totalIconsWidth = iconSize + buttonSpacing + iconSize;
+    const iconsX = (canvas.width - totalIconsWidth) / 2;
+    const iconsY = canvas.height / 2 + 80;
 
     return {
         resume: {
@@ -1593,19 +1580,18 @@ function getPauseMenuButtonBounds() {
             width: resumeWidth,
             height: resumeHeight
         },
-        fund: {
-            x: fundX,
-            y: fundY,
-            width: fundWidth,
-            height: fundHeight
-        },
         github: {
-            x: fundX + fundWidth + buttonSpacing,
-            y: fundY,
-            width: githubSize,
-            height: fundHeight
+            x: iconsX,
+            y: iconsY,
+            width: iconSize,
+            height: iconHeight
         },
-        // More Games button removed
+        slopgames: {
+            x: iconsX + iconSize + buttonSpacing,
+            y: iconsY,
+            width: iconSize,
+            height: iconHeight
+        }
     };
 }
 
@@ -1640,30 +1626,7 @@ function drawPauseMenu() {
     ctx.fillText('RESUME', canvas.width / 2, buttons.resume.y + buttons.resume.height / 2);
 
     // Credits
-    ctx.fillStyle = '#aaa';
-    ctx.font = '10px "Press Start 2P", monospace';
-    ctx.fillText('Created by AgentRateLimit', canvas.width / 2, buttons.resume.y + buttons.resume.height + 25);
-
-    // Patreon message
-    ctx.fillStyle = '#ccc';
-    ctx.font = '10px "Press Start 2P", monospace';
-    ctx.fillText('Digital wealth for everyone by open source.', canvas.width / 2, buttons.resume.y + buttons.resume.height + 45);
-
-    // Fund the mission button
-    ctx.fillStyle = '#8a2a4a';
-    ctx.fillRect(buttons.fund.x, buttons.fund.y, buttons.fund.width, buttons.fund.height);
-    ctx.strokeStyle = '#f96854';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(buttons.fund.x, buttons.fund.y, buttons.fund.width, buttons.fund.height);
-
-    // Heart icon
-    ctx.fillStyle = '#ff6b6b';
-    drawHeart(buttons.fund.x + 25, buttons.fund.y + buttons.fund.height / 2 - 8, 12);
-
-    ctx.fillStyle = 'white';
-    ctx.font = '12px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('Fund the Mission', buttons.fund.x + buttons.fund.width / 2 + 10, buttons.fund.y + buttons.fund.height / 2);
+    drawCredits(buttons.resume.y + buttons.resume.height + 20);
 
     // GitHub button
     ctx.fillStyle = '#2a2a2a';
@@ -1676,10 +1639,15 @@ function drawPauseMenu() {
     ctx.fillStyle = 'white';
     drawGitHubIcon(buttons.github.x + buttons.github.width / 2, buttons.github.y + buttons.github.height / 2, 18);
 
-    // Patreon progress bar
-    drawPatreonProgress(buttons.fund.y + buttons.fund.height + 20);
+    // SlopGames button
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(buttons.slopgames.x, buttons.slopgames.y, buttons.slopgames.width, buttons.slopgames.height);
+    ctx.strokeStyle = '#6a6a6a';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(buttons.slopgames.x, buttons.slopgames.y, buttons.slopgames.width, buttons.slopgames.height);
 
-    // More Games button removed
+    // SlopGames icon
+    drawSlopGamesIcon(buttons.slopgames.x + buttons.slopgames.width / 2, buttons.slopgames.y + buttons.slopgames.height / 2, 18);
 }
 
 function drawReadyOverlay() {
