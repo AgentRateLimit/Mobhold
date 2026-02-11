@@ -8,10 +8,6 @@ A retro pixel-art auto-battler survival game. Command your growing horde of ninj
 
 Tech Stack: HTML5 Canvas + vanilla JavaScript
 
-# 💫 Our Mission
-Digital wealth for everyone by open source. Fantastic games without micro transactions, ads and telemetry. Fund the mission for a better tomorrow:
-Support on Patreon https://www.patreon.com/c/agentratelimit/membership
-
 # 🏆 Credits
 
 Assets: Ninja Adventure Asset Pack by pixel-boy (CC0 - free for any use, attribution appreciated!)
